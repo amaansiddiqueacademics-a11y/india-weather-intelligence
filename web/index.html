@@ -1,0 +1,52 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>India Weather Intelligence</title>
+<meta name="description" content="Indian weather data warehouse, OLAP analytics and evaluated heat, rainfall and agriculture risk models.">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Public+Sans:wght@400;500;600;700&family=Inter:wght@200;300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/style.css?v=20261019i"><link rel="stylesheet" href="/overview.css?v=20261017a"><link rel="stylesheet" href="/models.css?v=20261021b">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><defs>
+<radialGradient id="gSun" cx=".35" cy=".3" r=".85"><stop offset="0" stop-color="#fff3a6"/><stop offset=".55" stop-color="#ffc933"/><stop offset="1" stop-color="#ff9f1c"/></radialGradient>
+<linearGradient id="gCloud" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#cfdff2"/></linearGradient>
+<linearGradient id="gCloudD" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#d3dbe6"/><stop offset="1" stop-color="#8493a8"/></linearGradient>
+<radialGradient id="gMoon" cx=".35" cy=".3" r=".9"><stop offset="0" stop-color="#fffbe6"/><stop offset="1" stop-color="#ecd9a2"/></radialGradient>
+</defs></svg>
+<a class="skip" href="#view">Skip to content</a>
+<div class="shell">
+  <header class="topbar">
+    <a class="brand" href="#/overview" aria-label="India Weather Intelligence, home">
+      <svg width="30" height="30" viewBox="0 0 48 48" aria-hidden="true"><circle cx="19" cy="18" r="9" fill="#FFC933"/><path d="M14 38h22a8.500 8.500 0 0 0 1.300-16.900A12 12 0 0 0 14.500 24 7.400 7.400 0 0 0 14 38z" fill="#fff" stroke="#0b6b73" stroke-width="2.200"/></svg>
+      <span>India Weather Intelligence</span>
+    </a>
+    <nav aria-label="Main">
+      <a href="#/overview">Overview</a>
+      <a href="#/history">History</a>
+      <a href="#/engineering">Data pipeline</a>
+      <a href="#/warehouse">Warehouse</a>
+      <a href="#/olap">SQL and OLAP</a>
+      <a href="#/risk">Early warnings</a>
+      <a href="#/models">All models</a>
+      <a href="#/method">Methodology</a>
+    </nav>
+  </header>
+  <main id="view" tabindex="-1" aria-live="polite"><div class="skeleton"></div></main>
+  <footer class="sitefoot">Weather data: ECMWF ERA5 reanalysis via Open-Meteo (gridded estimates, not station readings). Crop data: India Data Portal. Not an official warning service.</footer>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js"></script>
+<script src="/overview.js?v=20261017b"></script>
+<script src="/models.js?v=20261021a"></script>
+<script src="/models_report.js?v=20261021b"></script>
+<script src="/history.js?v=20261018f"></script>
+<script src="/pipeline.js?v=20261017h"></script>
+<script src="/warehouse.js?v=20261018m"></script>
+<script src="/olap.js?v=20261018d"></script>
+<script src="/risk.js?v=20261021b"></script>
+<script src="/method.js?v=20261017e"></script>
+<script src="/app.js?v=20261016s"></script>
+</body>
+</html>

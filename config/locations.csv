@@ -1,0 +1,11 @@
+location_id,city,state,region,latitude,longitude,district,agri_district
+DEL,Delhi,Delhi,North,28.6139,77.2090,New Delhi,
+BOM,Mumbai,Maharashtra,West,19.0760,72.8777,Mumbai,
+CCU,Kolkata,West Bengal,East,22.5726,88.3639,Kolkata,
+MAA,Chennai,Tamil Nadu,South,13.0827,80.2707,Chennai,
+BLR,Bengaluru,Karnataka,South,12.9716,77.5946,Bengaluru Urban,
+HYD,Hyderabad,Telangana,South,17.3850,78.4867,Hyderabad,
+AMD,Ahmedabad,Gujarat,West,23.0225,72.5714,Ahmedabad,Ahmedabad
+JAI,Jaipur,Rajasthan,North,26.9124,75.7873,Jaipur,Jaipur
+LKO,Lucknow,Uttar Pradesh,North,26.8467,80.9462,Lucknow,Lucknow
+LDH,Ludhiana,Punjab,North,30.9010,75.8573,Ludhiana,Ludhiana

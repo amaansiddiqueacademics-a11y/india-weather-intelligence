@@ -1,0 +1,23 @@
+# Private notes / project brief (never push)
+prompt.md
+CLAUDE.md
+.claude/
+skills-lock.json
+
+# Raw and processed data (re-create with `python -m wx.download` and the ETL steps)
+data/
+
+# Logs, caches, environments
+*.log
+reports/*.log
+reports/*.bak
+reports/_*
+reports/*.png
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+.env
+.vscode/
+.idea/
