@@ -1,4 +1,4 @@
-"""Acquire hourly ERA5-based history from the Open-Meteo Historical Archive API as CSV.
+"""Acquire raw data: hourly ERA5 history (Open-Meteo Historical Archive API) and district crop statistics (India Data Portal).
 
 One raw CSV per (city, year), saved untouched. Throttled, retried with exponential
 backoff, and idempotent (existing non-empty files are skipped).
@@ -15,6 +15,10 @@ from . import config
 
 URL = "https://archive-api.open-meteo.com/v1/archive"
 OUT = config.DATA_RAW / "openmeteo"
+# India Data Portal (CKAN) "Crop Wise Area Production Yield", ODC-BY. Saved where wx.etl_agri reads it.
+AGRI_URL = ("https://ckan.indiadataportal.com/dataset/5b8f4660-52d2-4edf-824b-1af41d290498/resource/"
+            "a000ce51-a257-42e3-8ab7-3cd212966f88/download/crop-wise-area-production-yield.csv")
+AGRI_OUT = config.DATA_RAW / "agri" / "crop-wise-area-production-yield.csv"
 MIN_INTERVAL_S = 1.0  # polite throttle between requests
 
 
@@ -35,11 +39,32 @@ def fetch_year(session: requests.Session, loc: pd.Series, year: int) -> str:
     raise RuntimeError(f"failed {loc.location_id} {year}")
 
 
+def fetch_agri(session: requests.Session) -> None:
+    """Download the national crop CSV once (about 56 MB); skipped if already present."""
+    if AGRI_OUT.exists() and AGRI_OUT.stat().st_size > 1_000_000:
+        return
+    AGRI_OUT.parent.mkdir(parents=True, exist_ok=True)
+    tmp = AGRI_OUT.with_suffix(".part")
+    with session.get(AGRI_URL, stream=True, timeout=300) as r:
+        r.raise_for_status()
+        with open(tmp, "wb") as f:
+            for chunk in r.iter_content(1 << 20):
+                f.write(chunk)
+    with open(tmp, "rb") as f:
+        head = f.read(200)
+    if not head.startswith(b"id,year,state_name"):
+        tmp.unlink()
+        raise RuntimeError("crop download did not return the expected CSV header")
+    tmp.replace(AGRI_OUT)
+    print(f"saved {AGRI_OUT.name} ({AGRI_OUT.stat().st_size/1e6:.1f} MB)", flush=True)
+
+
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     locs = pd.read_csv(config.LOCATIONS_CSV)
     s = requests.Session()
     s.headers["User-Agent"] = config.USER_AGENT
+    fetch_agri(s)
     for _, loc in locs.iterrows():
         for year in range(config.START_YEAR, config.END_YEAR + 1):
             path = OUT / f"{loc.location_id}_{year}.csv"

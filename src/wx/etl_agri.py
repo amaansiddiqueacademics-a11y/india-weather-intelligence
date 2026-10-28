@@ -26,10 +26,13 @@ def clean_agri(df: pd.DataFrame, mapping: pd.DataFrame) -> tuple[pd.DataFrame, p
     counts["in_supported_districts"] = len(df)
     df["year_start"] = df.year.str[:4].astype(int)
     rej = []
-    for reason, mask in {
-        "area missing or <= 0": df.area.isna() | (df.area <= 0),
-        "production missing or negative": df.production.isna() | (df.production < 0),
+    # Each rule is evaluated on the rows still in play, so a row is rejected once (first failing rule)
+    # and the boolean mask always aligns with the frame it filters.
+    for reason, rule in {
+        "area missing or <= 0": lambda d: d.area.isna() | (d.area <= 0),
+        "production missing or negative": lambda d: d.production.isna() | (d.production < 0),
     }.items():
+        mask = rule(df)
         rej.append(df[mask].assign(reason=reason))
         df = df[~mask]
     # yield consistency: reported yield must equal production/area within 5 %

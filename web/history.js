@@ -51,11 +51,7 @@ function splitFill(x, y) {
   return { P, N };
 }
 
-async function lmInfo(L) {
-  const key = "lmimg_v2_" + L.location_id; let info = null; try { info = JSON.parse(store.get(key, "null")); } catch { /* ignore */ }
-  if (!info) { try { const r = await fetch("https://en.wikipedia.org/api/rest_v1/page/summary/" + encodeURIComponent((LANDMARK[L.location_id] ?? [L.city])[0])), j = await r.json(); if (j.thumbnail?.source) { info = { src: j.thumbnail.source, page: j.content_urls?.desktop?.page }; store.set(key, JSON.stringify(info)); } } catch { /* offline */ } }
-  return info;
-}
+const lmInfo = (L) => landmarkInfo(L); /* shared with Overview: cache -> Wikipedia -> bundled photo */
 
 /* premium trend visual: smoothed area chart with glowing year dots + radial "climate wheel" */
 const tcol = (t) => { t = Math.max(-1, Math.min(1, t)); const m = (a, b, k) => Math.round(a + (b - a) * k), c0 = [43, 123, 214], c1 = [233, 236, 239], c2 = [232, 89, 12], [a, b, k] = t < 0 ? [c0, c1, 1 + t] : [c1, c2, t]; return `rgb(${m(a[0], b[0], k)},${m(a[1], b[1], k)},${m(a[2], b[2], k)})`; };
@@ -167,9 +163,9 @@ async function history() {
       box.querySelectorAll(".anbtn").forEach((b) => b.addEventListener("click", () => { const p = $("#an_" + b.dataset.an), open = p.hidden; p.hidden = !open; b.setAttribute("aria-expanded", open); b.firstChild.textContent = open ? "Hide analysis " : "Analysis "; b.lastElementChild.textContent = open ? "‹" : "›"; }));
 
       /* the city's landmark, fitted whole */
-      lmInfo(L).then((info) => { const pic = $("#chpic"); if (!info || !pic || S.city !== L.location_id) return; const img = new Image(); img.alt = `${(LANDMARK[L.location_id] ?? [])[1] ?? L.city}, ${L.city}`;
-        img.onload = () => { const w = pic.clientWidth || 420, want = w / (img.naturalWidth / img.naturalHeight); pic.style.height = Math.round(Math.max(230, Math.min(330, want))) + "px"; img.style.objectFit = want >= 230 && want <= 330 ? "cover" : "contain"; pic.append(img); requestAnimationFrame(() => img.classList.add("ready")); pic.querySelector(".cbg").style.backgroundImage = `url("${img.src}")`; $("#chcap").textContent = (LANDMARK[L.location_id] ?? [])[1] ?? L.city; const cr = $("#chcred"); cr.href = info.page; cr.textContent = "Photo: Wikipedia / Wikimedia Commons"; cr.hidden = false; };
-        img.src = info.src.replace(/\/\d+px-/, "/1280px-"); img.onerror = () => { img.src = info.src; }; });
+      lmInfo(L).then((info) => { const pic = $("#chpic"); if (!info || !pic || S.city !== L.location_id) return; const img = new Image(); const cap = info.caption ?? (LANDMARK[L.location_id] ?? [])[1] ?? L.city; img.alt = `${cap}, ${L.city}`;
+        img.onload = () => { const w = pic.clientWidth || 420, want = w / (img.naturalWidth / img.naturalHeight); pic.style.height = Math.round(Math.max(230, Math.min(330, want))) + "px"; img.style.objectFit = want >= 230 && want <= 330 ? "cover" : "contain"; pic.append(img); requestAnimationFrame(() => img.classList.add("ready")); pic.querySelector(".cbg").style.backgroundImage = `url("${img.src}")`; $("#chcap").textContent = cap; const cr = $("#chcred"); cr.href = info.page; cr.textContent = info.local ? "Photo: Wikimedia Commons" : "Photo: Wikipedia / Wikimedia Commons"; cr.hidden = false; };
+        img.src = info.local ? info.src : info.src.replace(/\/\d+px-/, "/1280px-"); img.onerror = () => { if (img.src !== new URL(info.src, location.href).href) img.src = info.src; }; });
 
       /* dataset measures table */
       const VARS = [["temperature_c", "Temperature", "°C"], ["heat_index_c", "Feels like", "°C"], ["relative_humidity_pct", "Humidity", "%"], ["pressure_msl_hpa", "Pressure", "hPa"], ["wind_speed_kmh", "Wind speed", "km/h"]];

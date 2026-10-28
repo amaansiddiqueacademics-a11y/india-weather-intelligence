@@ -2,19 +2,27 @@
 from __future__ import annotations
 
 import time
+from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
 import requests
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import config, db, etl_proof, models_viz, olap, predict as predict_mod, wh_explore
 
-app = FastAPI(title="India Weather Intelligence API", version="1.0",
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    _warm_etl_evidence()  # defined below; resolved when the server starts
+    yield
+
+
+app = FastAPI(title="India Weather Intelligence API", version="1.0", lifespan=lifespan,
               description="Warehouse-backed analytics, OLAP, forecasting and risk modules for 10 Indian cities.")
 _cache: dict[str, tuple[float, Any]] = {}
 
@@ -42,6 +50,21 @@ def clean(o: Any) -> Any:
     if hasattr(o, "isoformat"):
         return o.isoformat()
     return o
+
+
+_LOCS = pd.read_csv(config.LOCATIONS_CSV)
+KNOWN_CITIES = set(_LOCS.location_id) | set(_LOCS.city)
+
+
+@app.middleware("http")
+async def reject_unknown_city(request: Request, call_next):
+    """Unknown `city`/`location_id` -> 404 for every endpoint, instead of an empty 200 or a 500."""
+    if request.url.path.startswith("/api/"):
+        for name in ("city", "location_id"):
+            v = request.query_params.get(name)
+            if v and v not in KNOWN_CITIES:
+                return JSONResponse(status_code=404, content={"detail": f"unknown city '{v}'; use one of {sorted(_LOCS.location_id)}"})
+    return await call_next(request)
 
 
 @app.exception_handler(predict_mod.PredictionError)
@@ -582,7 +605,6 @@ def etl_run(run_id: int):
 
 
 # ------------------------------------------------------- ETL evidence
-@app.on_event("startup")
 def _warm_etl_evidence():
     """Pre-compute the slow evidence queries in the background so the first page view is instant."""
     import threading

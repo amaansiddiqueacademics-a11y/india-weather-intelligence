@@ -111,3 +111,17 @@ def test_agri_cleaning_rejects_bad_rows():
     mapping = pd.DataFrame({"state": ["Gujarat"], "agri_district": ["Ahmedabad"], "location_id": ["AMD"]})
     ok, rej, counts = clean_agri(raw, mapping)
     assert len(ok) == 1 and counts["rejected"] == 3
+
+
+def test_agri_row_failing_two_rules_is_rejected_once():
+    """A row with bad area AND bad production must be quarantined once, not double-counted."""
+    import warnings
+    from wx.etl_agri import clean_agri
+    raw = pd.DataFrame({"state_name": ["Gujarat"] * 3, "district_name": ["Ahmedabad"] * 3, "year": ["2010-2011"] * 3, "crop_name": list("abc"),
+                        "crop_type": "Cereals", "season": "Kharif", "area": [100, 0, 100], "production": [200, -5, -1], "yield": [2.0, 1.0, 1.0]})
+    mapping = pd.DataFrame({"state": ["Gujarat"], "agri_district": ["Ahmedabad"], "location_id": ["AMD"]})
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", UserWarning)  # the old code raised "Boolean Series key will be reindexed"
+        ok, rej, counts = clean_agri(raw, mapping)
+    assert len(ok) == 1 and counts["rejected"] == 2 and len(rej) == 2
+    assert rej.set_index("crop_name").loc["b", "reason"] == "area missing or <= 0"

@@ -150,3 +150,24 @@ def test_risk_endpoints_contract():
     assert heat and all(r["actual"] >= 30 for r in heat) and heat == sorted(heat, key=lambda r: -r["actual"])
     rain = client.get("/api/ml/cases?kind=rain").json()
     assert rain["summary"]["caught"] <= rain["summary"]["events"] and 0 < rain["threshold"] < 1
+
+
+@pytest.mark.parametrize("path", ["/api/history?city=XXX", "/api/history/distribution?city=XXX", "/api/risk/hazards?city=Atlantis",
+                                  "/api/ml/predictions?location_id=ZZ&model=hgb&target=temperature_c&horizon_h=24"])
+def test_unknown_city_is_404(path):
+    r = client.get(path)
+    assert r.status_code == 404 and "unknown city" in r.json()["detail"]
+
+
+def test_city_accepts_id_or_name():
+    assert client.get("/api/history?city=BOM").status_code == 200
+    assert client.get("/api/live", params={"city": "Mumbai"}).status_code in (200, 503)  # 503 = external service down, still a known city
+
+
+def test_dashboard_map_file_is_served():
+    r = client.get("/data/india_states.geojson")
+    assert r.status_code == 200
+    names = {f["properties"]["name"] for f in r.json()["features"]}
+    import pandas as pd
+    from wx import config
+    assert set(pd.read_csv(config.LOCATIONS_CSV).state) <= names  # every city's state has an outline

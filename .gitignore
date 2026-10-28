@@ -4,8 +4,9 @@ CLAUDE.md
 .claude/
 skills-lock.json
 
-# Raw and processed data (re-create with `python -m wx.download` and the ETL steps)
-data/
+# Raw and processed data (re-create with `python -m wx.download` and the ETL steps).
+# Anchored to the repo root so web/data/ (dashboard map) is still tracked.
+/data/
 
 # Logs, caches, environments
 *.log

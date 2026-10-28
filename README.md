@@ -4,6 +4,8 @@ A **data analysis and data warehousing project** on 21 years of hourly weather f
 
 **Data:** ECMWF ERA5 hourly weather (2002-2022) via Open-Meteo, plus district crop statistics from the India Data Portal.
 
+The free Open-Meteo archive API has a daily request quota per IP address. If `wx.download` reports "Daily API request limit exceeded", re-run it after the quota resets (00:00 UTC, 05:30 IST); files already saved are skipped.
+
 ## Pipeline
 
 ```
@@ -30,12 +32,12 @@ Electricity demand, flood and health outcome data were not obtained. The Early w
 
 ## Run
 
-Requires Python 3.12 and a local PostgreSQL 16+ (user `postgres`, trust auth on 127.0.0.1; override with `WX_DSN`).
+Requires Python 3.12+ (tested on 3.12 and 3.13) and a local PostgreSQL 16+ (tested on 16 and 18; user `postgres`, trust auth on 127.0.0.1; override with `WX_DSN`).
 
 ```
 pip install -r requirements.txt
 cd src
-python -m wx.download      # raw CSVs into data/raw (rate-limited, resumable)
+python -m wx.download      # crop CSV + 210 weather CSVs into data/raw (rate-limited, resumable)
 python -m wx.etl_weather   # validate, clean, transform, load (idempotent)
 python -m wx.etl_agri
 python -m wx.warehouse     # snowflake schema and materialised views
@@ -43,7 +45,7 @@ python -m wx.eda
 python -m wx.ml            # heat and rain models, registry, evaluation
 python -m wx.ml_agri
 python -m uvicorn wx.api:app --port 8077   # dashboard at http://localhost:8077
-cd .. && pytest            # 30 tests
+cd .. && pytest            # 37 tests
 ```
 
 Splits: train 2002-2015, validation 2016-2018, test 2019-2022 (agriculture: <=2014 / 2015-2016 / 2017-2021). No random shuffling.
@@ -91,11 +93,11 @@ All under `/api`; interactive docs at `/docs`.
 |---|---|
 | `sql/` | DDL: schemas, star, snowflake |
 | `src/wx/` | download, ETL, warehouse, OLAP, EDA, features, ML, prediction, API |
-| `web/` | Static SPA (vanilla JS + Plotly, no build step); one JS file per page |
-| `tests/` | ETL and API/SQL tests (30 tests, need the running warehouse) |
+| `web/` | Static SPA (vanilla JS + Plotly, no build step); one JS file per page. `web/data/` holds the India state outlines, `web/img/landmarks/` the offline fallback city photos |
+| `tests/` | ETL and API/SQL tests (37 tests; the API/SQL ones need the loaded warehouse) |
 | `models/` | Saved model artifacts (`.joblib`) |
 | `reports/` | Logs and JSON reports |
-| `.gitignore` | Keeps raw data (`data/`), logs and private notes (`prompt.md`) out of git |
+| `.gitignore` | Keeps raw data (`/data/` at the repo root), logs and private notes (`prompt.md`) out of git |
 | `docs/` | `DECISIONS.md` (sources, scope, trade-offs), `DATASET_FEASIBILITY.md` |
 
 ## Limitations
@@ -106,3 +108,8 @@ All under `/api`; interactive docs at `/docs`.
 - Delhi, Mumbai, Kolkata, Chennai, Bengaluru and Hyderabad have no usable crop history, so agriculture covers four cities.
 
 See `docs/DECISIONS.md` and the dashboard's Methodology page for details.
+
+## Credits
+
+- State outlines: [DataMeet India maps](https://github.com/datameet/maps) (CC BY 2.5 India), simplified.
+- City photos: Wikipedia / Wikimedia Commons (loaded live; bundled thumbnails are used when Wikipedia is unreachable).

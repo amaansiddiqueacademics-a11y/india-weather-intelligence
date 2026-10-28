@@ -111,8 +111,21 @@ const METRICS = {
   hot_days: { ic: "sun", def: "Days per year when the high reaches 40 °C or more.", short: "Hot days", label: "Days per year with a high ≥ 40 °C", measure: "hot_days", perYear: true, ramp: "heat", unit: " d", dec: 1 },
   heavy_days: { ic: "cloud", def: "Days per year with 35.5 mm or more of rain: street-flooding downpours.", short: "Heavy-rain days", label: "Days per year with rain ≥ 35.5 mm", measure: "heavy_rain_days", perYear: true, ramp: "storm", unit: " d", dec: 2 },
 };
-const STATE_OF = { Hyderabad: "Andhra Pradesh" }; // boundary file predates Telangana (2014)
+const STATE_OF = {}; // web/data/india_states.geojson uses current state boundaries (Telangana included)
 const LANDMARK = { BOM: ["Gateway of India", "Gateway of India"], DEL: ["India Gate", "India Gate"], CCU: ["Victoria Memorial, Kolkata", "Victoria Memorial"], MAA: ["Kapaleeshwarar Temple", "Kapaleeshwarar Temple"], BLR: ["Vidhana Soudha", "Vidhana Soudha"], HYD: ["Charminar", "Charminar"], AMD: ["Hutheesing Jain Temple", "Hutheesing Jain Temple"], JAI: ["Hawa Mahal", "Hawa Mahal"], LKO: ["Rumi Darwaza", "Rumi Darwaza"], LDH: ["Gurdwara Mehdiana Sahib", "Gurdwara Mehdiana Sahib (Ludhiana district)"] }; // [Wikipedia page, caption]
+/* Bundled fallback photos (web/img/landmarks, small Wikimedia Commons thumbnails) used when the Wikipedia API is rate-limited or offline: [caption, Commons file page] */
+const LANDMARK_LOCAL = { BOM: ["Gateway of India", "https://commons.wikimedia.org/wiki/File:Mumbai_03-2016_30_Gateway_of_India.jpg"], DEL: ["India Gate", "https://commons.wikimedia.org/wiki/File:India_Gate_front.jpg"], CCU: ["Victoria Memorial", "https://commons.wikimedia.org/wiki/File:Victoria_Memorial_situated_in_Kolkata.jpg"], MAA: ["Kapaleeshwarar Temple", "https://commons.wikimedia.org/wiki/File:Kapaleeswarar1.jpg"], BLR: ["Vidhana Soudha", "https://commons.wikimedia.org/wiki/File:Lighting_of_Vidhana_Soudha.jpg"], HYD: ["Charminar", "https://commons.wikimedia.org/wiki/File:Charminar_Hyderabad_1.jpg"], AMD: ["Sidi Saiyyed Mosque", "https://commons.wikimedia.org/wiki/File:Sidi_Saiyyed_Mosque%2C_Ahmedabad.jpg"], JAI: ["Hawa Mahal", "https://commons.wikimedia.org/wiki/File:East_facade_Hawa_Mahal_Jaipur_from_ground_level_%28July_2022%29_-_img_01.jpg"], LKO: ["Rumi Darwaza", "https://commons.wikimedia.org/wiki/File:Rumi_Darwaza_-_DSC2797-01.jpg"], LDH: ["Mohinder Singh Randhawa Library", "https://commons.wikimedia.org/wiki/File:Mohinder_Singh_Randhawa_Library.jpg"] };
+/* One lookup for both pages: browser cache -> Wikipedia (high-res) -> bundled photo. Returns {src, page, caption?, local?} or null. */
+async function landmarkInfo(loc) {
+  const key = "lmimg_v2_" + loc.location_id; let info = null; try { info = JSON.parse(store.get(key, "null")); } catch { /* ignore */ }
+  if (info) return info;
+  try {
+    const r = await fetch("https://en.wikipedia.org/api/rest_v1/page/summary/" + encodeURIComponent((LANDMARK[loc.location_id] ?? [loc.city])[0]));
+    if (r.ok) { const j = await r.json(); if (j.thumbnail?.source) { info = { src: j.thumbnail.source, page: j.content_urls?.desktop?.page }; store.set(key, JSON.stringify(info)); return info; } }
+  } catch { /* offline: fall through */ }
+  const lc = LANDMARK_LOCAL[loc.location_id]; // not cached, so Wikipedia is retried on the next visit
+  return lc ? { src: `/img/landmarks/${loc.location_id}.jpg`, page: lc[1], caption: lc[0], local: true } : null;
+}
 const seg = (id, cap, opts, sel) => `<div class="tgroup"><span class="cap" id="${id}_c">${cap}</span><div class="seg" id="${id}" role="group" aria-labelledby="${id}_c">${opts.map(([v, l]) => `<button type="button" data-v="${v}" aria-pressed="${String(v) === String(sel)}">${l}</button>`).join("")}</div></div>`;
 function bindSeg(id, cb) { $("#" + id).addEventListener("click", (e) => { const b = e.target.closest("[data-v]"); if (!b) return; $("#" + id).querySelectorAll("[data-v]").forEach((x) => x.setAttribute("aria-pressed", x === b)); cb(b.dataset.v); }); }
 const wait = (ms) => new Promise((r) => setTimeout(r, REDUCED ? 0 : ms));
@@ -168,15 +181,14 @@ async function skyOverview() {
 
   /* one famous landmark photo per city (Wikipedia/Wikimedia Commons, cached in the browser) */
   async function loadCityImage(loc) {
-    const fig = $("#skcity"), key = "lmimg_v2_" + loc.location_id, [page, caption] = LANDMARK[loc.location_id] ?? [loc.city, loc.city];
-    fig.innerHTML = `<div class="cpic"><div class="cbg"></div></div><figcaption><b>${esc(caption)}</b><span>${esc(loc.city)}, ${esc(loc.state)}</span><span class="meta">ERA5 grid cell ${(+loc.grid_latitude).toFixed(2)}°N, ${(+loc.grid_longitude).toFixed(2)}°E · ${Math.round(loc.elevation_m)} m above sea level</span></figcaption>`;
-    let info = null; try { info = JSON.parse(store.get(key, "null")); } catch { /* ignore */ }
-    if (!info) { try { const r = await fetch("https://en.wikipedia.org/api/rest_v1/page/summary/" + encodeURIComponent(page)); const j = await r.json(); const src = j.thumbnail?.source; if (src) { info = { src, page: j.content_urls?.desktop?.page }; store.set(key, JSON.stringify(info)); } } catch { /* offline: plain card remains */ } }
+    const fig = $("#skcity"), caption0 = (LANDMARK[loc.location_id] ?? [loc.city, loc.city])[1];
+    fig.innerHTML = `<div class="cpic"><div class="cbg"></div></div><figcaption><b>${esc(caption0)}</b><span>${esc(loc.city)}, ${esc(loc.state)}</span><span class="meta">ERA5 grid cell ${(+loc.grid_latitude).toFixed(2)}°N, ${(+loc.grid_longitude).toFixed(2)}°E · ${Math.round(loc.elevation_m)} m above sea level</span></figcaption>`;
+    const info = await landmarkInfo(loc);
     if (info && S.city === loc.location_id) {
-      const img = new Image(); img.alt = `${caption}, ${loc.city}`; let tried = false;
-      img.onload = () => { if (S.city !== loc.location_id) return; const pic = fig.querySelector(".cpic"), w = pic.clientWidth || 340, want = w / (img.naturalWidth / img.naturalHeight); pic.style.height = Math.round(Math.max(190, Math.min(270, want))) + "px"; img.style.objectFit = want >= 190 && want <= 270 ? "cover" : "contain"; img.className = "ready"; pic.append(img); fig.querySelector(".cbg").style.backgroundImage = `url("${img.src}")`; fig.querySelector("figcaption").insertAdjacentHTML("beforeend", `<a href="${esc(info.page)}" target="_blank" rel="noopener">Photo: Wikipedia / Wikimedia Commons</a>`); };
+      const caption = info.caption ?? caption0, img = new Image(); img.alt = `${caption}, ${loc.city}`; let tried = false;
+      img.onload = () => { if (S.city !== loc.location_id) return; const pic = fig.querySelector(".cpic"), w = pic.clientWidth || 340, want = w / (img.naturalWidth / img.naturalHeight); pic.style.height = Math.round(Math.max(190, Math.min(270, want))) + "px"; img.style.objectFit = want >= 190 && want <= 270 ? "cover" : "contain"; img.className = "ready"; pic.append(img); fig.querySelector(".cbg").style.backgroundImage = `url("${img.src}")`; fig.querySelector("figcaption b").textContent = caption; fig.querySelector("figcaption").insertAdjacentHTML("beforeend", `<a href="${esc(info.page)}" target="_blank" rel="noopener">Photo: ${info.local ? "Wikimedia Commons" : "Wikipedia / Wikimedia Commons"}</a>`); };
       img.onerror = () => { if (!tried) { tried = true; img.src = info.src; } }; // large size unavailable: fall back to the standard thumbnail
-      img.src = info.src.replace(/\/\d+px-/, "/1280px-");
+      img.src = info.local ? info.src : info.src.replace(/\/\d+px-/, "/1280px-");
     }
   }
 
@@ -185,6 +197,7 @@ async function skyOverview() {
     const loc = cities.find((c) => c.location_id === S.city); loadCityImage(loc);
     const [live, air, normal] = await Promise.allSettled([api("/live?" + qs({ city: S.city })), api("/live/air?" + qs({ city: S.city })), (async () => { const n = new Date(); return api("/normal?" + qs({ city: S.city, month: n.getMonth() + 1, day: n.getDate(), hour: n.getHours() })); })()]);
     if (S.city !== loc.location_id) return; // user switched city meanwhile
+    if (!document.getElementById("skypage")) return; // user left the Overview page while the live lookup was pending
     if (live.status !== "fulfilled") { renderOffline(loc, live.reason, normal.value); return; }
     sk.last = [loc, live.value, air.value ?? null, normal.value ?? null]; render(...sk.last);
   }
@@ -288,7 +301,7 @@ async function skyOverview() {
   async function drawMap() {
     const M = METRICS[sk.metric]; store.set("sk_metric", sk.metric); drawDef(M); const years = Math.max(1, sk.y1 - sk.y0 + 1);
     let r; try { r = await api("/olap/aggregate?" + qs({ time_level: "all", geo_level: "city", measures: M.measure, seasons: sk.season, year_from: sk.y0, year_to: sk.y1 })); } catch (e) { $("#skrank").innerHTML = err(e); return; }
-    if (!sk.geo) sk.geo = await fetch("/data/india_states.geojson").then((x) => x.json());
+    if (!sk.geo) { try { const g = await fetch("/data/india_states.geojson"); sk.geo = g.ok ? await g.json() : { type: "FeatureCollection", features: [] }; } catch { sk.geo = { type: "FeatureCollection", features: [] }; } } /* no outline file: still draw city markers */
     sk.values = Object.fromEntries(r.rows.map((x) => [x.city, M.perYear ? x[M.measure] / years : x[M.measure]])); sk.M = M;
     $("#sksql").textContent = r.sql + "\n-- parameters: " + JSON.stringify(r.params); drawMapOnly(); loadYears();
   }
