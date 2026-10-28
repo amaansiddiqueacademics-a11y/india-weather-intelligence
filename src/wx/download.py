@@ -33,6 +33,10 @@ def fetch_year(session: requests.Session, loc: pd.Series, year: int) -> str:
         r = session.get(URL, params=params, timeout=120)
         if r.status_code == 200 and "time," in r.text:
             return r.text
+        if r.status_code == 429 and "Daily API request limit" in r.text:
+            # backing off cannot help until the quota resets at 00:00 UTC; saved files are kept, so just re-run later
+            raise SystemExit(f"Open-Meteo daily quota reached at {loc.location_id} {year}. Re-run `python -m wx.download` "
+                             "after 00:00 UTC (05:30 IST); files already saved are skipped.")
         wait = delay * (2 ** attempt)
         print(f"  {loc.location_id} {year}: HTTP {r.status_code} {r.text[:120]!r}; retry in {wait:.0f}s", flush=True)
         time.sleep(min(wait, 300))
