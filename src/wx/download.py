@@ -30,7 +30,13 @@ def fetch_year(session: requests.Session, loc: pd.Series, year: int) -> str:
     }
     delay = 5.0
     for attempt in range(8):
-        r = session.get(URL, params=params, timeout=120)
+        try:
+            r = session.get(URL, params=params, timeout=120)
+        except requests.RequestException as exc:  # dropped connection / timeout: transient, retry with the same backoff
+            wait = delay * (2 ** attempt)
+            print(f"  {loc.location_id} {year}: {exc.__class__.__name__}; retry in {wait:.0f}s", flush=True)
+            time.sleep(min(wait, 300))
+            continue
         if r.status_code == 200 and "time," in r.text:
             return r.text
         if r.status_code == 429 and "Daily API request limit" in r.text:
