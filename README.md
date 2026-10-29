@@ -44,6 +44,7 @@ python -m wx.warehouse     # snowflake schema and materialised views
 python -m wx.eda
 python -m wx.ml            # heat and rain models, registry, evaluation
 python -m wx.ml_agri
+python -m wx.warehouse     # re-run once so the snowflake also gets the model predictions and metrics
 python -m uvicorn wx.api:app --port 8077   # dashboard at http://localhost:8077
 cd .. && pytest            # 37 tests
 ```
