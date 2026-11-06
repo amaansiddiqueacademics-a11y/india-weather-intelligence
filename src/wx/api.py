@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
+import psycopg
 import requests
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
@@ -84,6 +85,16 @@ async def prediction_error(_, exc):
 @app.exception_handler(ValueError)
 async def value_error(_, exc):
     return JSONResponse(status_code=400, content={"error": "invalid_request", "detail": str(exc)})
+
+
+@app.exception_handler(psycopg.OperationalError)
+@app.exception_handler(psycopg.errors.UndefinedTable)
+async def warehouse_unavailable(_, exc):
+    """No server, no `wx` database, or tables not created yet: say so instead of a bare 500 (the dashboard shows `detail`)."""
+    first = str(exc).strip().splitlines()[0] if str(exc).strip() else exc.__class__.__name__
+    return JSONResponse(status_code=503, content={"error": "warehouse_unavailable",
+                                                  "detail": f"The warehouse is not available ({first}). If it has not been built yet, run "
+                                                            "`python -m wx.pipeline` (Docker: `docker compose run --rm app python -m wx.pipeline`)."})
 
 
 # ----------------------------------------------------------------- meta

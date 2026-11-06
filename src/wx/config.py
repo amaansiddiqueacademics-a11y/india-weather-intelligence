@@ -1,4 +1,4 @@
-"""Central configuration. Secrets/DSNs come from the environment (.env), never code."""
+"""Central configuration. Connection settings come from environment variables (WX_DSN, WX_ADMIN_DSN), never from code."""
 from __future__ import annotations
 
 import os
@@ -11,7 +11,7 @@ REPORTS_DIR = ROOT / "reports"
 SQL_DIR = ROOT / "sql"
 LOCATIONS_CSV = ROOT / "config" / "locations.csv"
 
-# Local PostgreSQL (pg_hba trusts 127.0.0.1). Override with WX_DSN.
+# Default: local PostgreSQL, user postgres, no password. Override with WX_DSN / WX_ADMIN_DSN (see README).
 DSN = os.environ.get("WX_DSN", "host=localhost port=5432 dbname=wx user=postgres")
 ADMIN_DSN = os.environ.get("WX_ADMIN_DSN", "host=localhost port=5432 dbname=postgres user=postgres")
 

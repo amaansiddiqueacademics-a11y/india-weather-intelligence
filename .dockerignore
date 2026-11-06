@@ -1,0 +1,12 @@
+.git
+.github
+data
+docs
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.ruff_cache
+*.log
+prompt.md
+CLAUDE.md
+.claude

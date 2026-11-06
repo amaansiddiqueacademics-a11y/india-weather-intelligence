@@ -1,0 +1,40 @@
+# Run the whole project without installing PostgreSQL or Python on your machine:
+#   docker compose up -d --build                        # database + dashboard on http://localhost:8077
+#   docker compose run --rm app python -m wx.pipeline   # first time only: download data, build warehouse, train models
+services:
+  db:
+    image: postgres:16-alpine
+    # PostgreSQL's defaults are sized for tiny machines; these make the 1.8-million-row load and the indexes several times faster
+    command: ["postgres", "-c", "shared_buffers=512MB", "-c", "work_mem=64MB", "-c", "maintenance_work_mem=512MB", "-c", "max_wal_size=2GB"]
+    shm_size: 1gb
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: wx-local-only   # local development database; change it if you expose the port
+      POSTGRES_DB: postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5433:5432"   # 5433 on your machine, so it does not clash with a local PostgreSQL
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  app:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      WX_DSN: "host=db port=5432 dbname=wx user=postgres password=wx-local-only"
+      WX_ADMIN_DSN: "host=db port=5432 dbname=postgres user=postgres password=wx-local-only"
+    volumes:
+      - ./data:/app/data         # downloaded raw files stay on your machine and are reused
+      - ./models:/app/models     # retrained models and the evaluation report are written back here
+      - ./reports:/app/reports
+    ports:
+      - "127.0.0.1:8077:8077"
+
+volumes:
+  pgdata:
