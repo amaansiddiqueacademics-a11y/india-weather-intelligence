@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Python lint (ruff.toml)
+        run: pip install ruff==0.16.9 && ruff check src tests
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Dashboard scripts parse
+        run: for f in web/*.js; do node --check "$f"; done
+
+  test:
+    # The 40 warehouse tests need the downloaded data and skip here; the 19 ETL, pipeline and offline-API tests run.
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Saved models load with the pinned scikit-learn
+        run: python -W error -c "import glob, joblib; [joblib.load(f) for f in glob.glob('models/*.joblib')]; print('models ok')"
+      - run: pytest -q -rs
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the app image
+        run: docker compose build app

@@ -1,0 +1,7 @@
+# Lint rules checked locally and in CI: real errors (pyflakes, syntax), likely bugs (bugbear) and blank-line hygiene.
+target-version = "py312"
+
+[lint]
+preview = true                        # needed for the E3 blank-line rules
+select = ["F", "E9", "B", "E3", "W391"]
+ignore = ["B008", "B905"]             # FastAPI's Query() defaults; zip() without strict=

@@ -1,0 +1,12 @@
+# Normalise line endings for text files.
+* text=auto
+
+# GitHub's language bar skips files it thinks are minified (long lines). These are hand-written, so count them.
+web/*.js  linguist-generated=false
+web/*.css linguist-generated=false
+sql/*.sql linguist-detectable=true
+
+# Binary artifacts: never diff or merge them as text.
+*.joblib binary
+*.jpg    binary
+*.png    binary
