@@ -46,7 +46,7 @@ python -m wx.ml            # heat and rain models, registry, evaluation
 python -m wx.ml_agri
 python -m wx.warehouse     # re-run once so the snowflake also gets the model predictions and metrics
 python -m uvicorn wx.api:app --port 8077   # dashboard at http://localhost:8077
-cd .. && pytest            # 37 tests
+cd .. && pytest            # 46 tests
 ```
 
 Splits: train 2002-2015, validation 2016-2018, test 2019-2022 (agriculture: <=2014 / 2015-2016 / 2017-2021). No random shuffling.
@@ -95,9 +95,9 @@ All under `/api`; interactive docs at `/docs`.
 | `sql/` | DDL: schemas, star, snowflake |
 | `src/wx/` | download, ETL, warehouse, OLAP, EDA, features, ML, prediction, API |
 | `web/` | Static SPA (vanilla JS + Plotly, no build step); one JS file per page. `web/data/` holds the India state outlines, `web/img/landmarks/` the offline fallback city photos |
-| `tests/` | ETL and API/SQL tests (37 tests; the API/SQL ones need the loaded warehouse) |
+| `tests/` | ETL and API/SQL tests (46 tests; the API/SQL ones need the loaded warehouse) |
 | `models/` | Saved model artifacts (`.joblib`) |
-| `reports/` | Logs and JSON reports |
+| `reports/` | `ml_report.json`, the test-set evaluation written by `wx.ml` |
 | `.gitignore` | Keeps raw data (`/data/` at the repo root), logs and private notes (`prompt.md`) out of git |
 | `docs/` | `DECISIONS.md` (sources, scope, trade-offs), `DATASET_FEASIBILITY.md` |
 

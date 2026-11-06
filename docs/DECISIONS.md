@@ -1,9 +1,8 @@
 # Decisions
 
-- **Task source.** `prompt.md` (India weather warehouse and risk platform) is the brief. The `CLAUDE.md` in the parent Downloads folder describes a different project (WeatherMind) and was used only for conventions (Python 3.12, FastAPI, pytest, decision log).
-- **Database.** Local PostgreSQL 18 service (Docker daemon was not running). PostGIS is not used: locations are plain latitude/longitude columns. Schemas are applied from ordered `sql/*.sql` files with `IF NOT EXISTS`; no Alembic.
+- **Database.** Local PostgreSQL (16+, tested on 16 and 18). PostGIS is not used: locations are plain latitude/longitude columns. Schemas are applied from ordered `sql/*.sql` files with `IF NOT EXISTS`; no Alembic.
 - **Primary weather source.** Open-Meteo Historical Weather API (ERA5/ERA5-Land reanalysis), hourly CSV, 14 variables, 2002-2022, 10 cities, local time Asia/Kolkata. Chosen because it is key-free, CSV, consistent across coordinates and gap-free. Trade-off: gridded reanalysis, not station observations.
-- **Download limits.** The free API allows 5,000 weighted calls per hour. The downloader throttles, retries with exponential backoff and skips existing files, so it can be re-run safely.
+- **Download limits.** The free API has per-minute, per-hour (5,000 weighted calls) and per-day quotas. The downloader throttles, retries rate limits and dropped connections with exponential backoff, stops with a clear message on the daily quota, and skips files already saved, so it can be re-run safely.
 - **Agricultural source.** India Data Portal "Crop Wise Area Production Yield" (district level, 1997-2022, ODC-BY). Only districts containing a supported city are loaded. Delhi, Mumbai, Kolkata, Chennai, Bengaluru (Urban) and Hyderabad have no usable crop history, so Risk C covers Ahmedabad, Jaipur, Lucknow and Ludhiana only.
 - **Not obtained (disclosed, not faked).** Flood outcomes, electricity demand, health outcomes, archived external forecasts for comparison.
 - **Star vs snowflake.** Same surrogate-key values in both so queries are comparable. Agricultural facts are at city grain in the star and at district grain in the snowflake (location -> district -> state -> region).
