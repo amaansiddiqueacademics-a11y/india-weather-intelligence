@@ -1,10 +1,8 @@
 /* Risk analysis: a forecast panel (pick a moment, adjust the key inputs) followed by the track record of each model against simple baselines. */
-const RNM = { persistence: "No change", climatology: "Usual climate", ridge: "Linear model", logistic: "Linear model", hgb: "Decision-tree model", hgb_calibrated: "Decision-tree model", logistic_calibrated: "Linear model" };
 const RIN = {
   heat: [["temp", "Temperature at issue time", "°C", 8, 46, 0.5], ["temp_l24", "Temperature 24 h before issue", "°C", 8, 46, 0.5], ["rh", "Humidity", "%", 5, 100, 1], ["pres", "Pressure", "hPa", 960, 1030, 0.5], ["wind", "Wind speed", "km/h", 0, 60, 1], ["rain_24h", "Rain in the 24 h before issue", "mm", 0, 150, 1]],
   rain: [["rain_24h", "Rain in the 24 h before issue", "mm", 0, 150, 1], ["rain_72h", "Rain in the 3 days before issue", "mm", 0, 300, 1], ["rh", "Humidity", "%", 5, 100, 1], ["pres", "Pressure", "hPa", 960, 1030, 0.5], ["soil", "Soil moisture", "m³/m³", 0.05, 0.5, 0.01], ["temp", "Temperature at issue time", "°C", 8, 46, 0.5]],
 };
-const bandColor = (b) => ({ low: "#12b76a", caution: "#eab308", "extreme caution": "#f79009", danger: "#d92d20", "extreme danger": "#7a0019" }[b] ?? "#6e6e73");
 
 async function risk() {
   const ml = await api("/ml/summary");
@@ -14,7 +12,6 @@ async function risk() {
   finish();
   const results = (prefix, target) => ml.results.filter((r) => r.risk.startsWith(prefix) && (!target || r.target === target));
   const citySel = (id) => `<label>City<select id="${id}">${S.meta.locations.map((l) => `<option value="${l.location_id}" ${l.location_id === S.city ? "selected" : ""}>${esc(l.city)}</option>`).join("")}</select></label>`;
-  const useLine = (who, decision, trust) => `<div class="useline reveal"><span><b>Used by</b> ${who}</span><span><b>Decides</b> ${decision}</span><span><b>Trust</b> ${trust}</span></div>`;
 
   const alertBox = (k, v, thr) => {
     const L = k === "rain" ? (v < 5 ? ["green", "Green: low risk", "No action needed."] : v < thr ? ["yellow", "Yellow: watch", "Rain is possible. Stay aware."] : v < 50 ? ["orange", "Orange alert", "Heavy rain likely. Prepare drains, delay travel."] : ["red", "Red warning", "Very likely. Act now, avoid low-lying areas."])
@@ -65,10 +62,6 @@ async function risk() {
     bindSeg("f_hour", (v) => { F.hour = +v; loadMoment(); }); bindSeg("f_h", (v) => { F.h = +v; loadMoment(); }); if (kind === "heat") bindSeg("f_t", (v) => { F.target = v; loadMoment(); });
     $("#f_reset").onclick = loadMoment; loadMoment();
   }
-  const skillChart = (id, rows, key, lower, unit, hs, title, answer) => {
-    const models = ["persistence", "climatology", "ridge", "logistic", "logistic_calibrated", "hgb", "hgb_calibrated"].filter((m) => rows.some((r) => r.model === m)), col = { persistence: "#94a3b8", climatology: "#d9b97a", ridge: "#5aa9e6", logistic: "#5aa9e6", logistic_calibrated: "#5aa9e6", hgb: "#1b3a6b", hgb_calibrated: "#1b3a6b" };
-    plot("#" + id, models.map((m) => ({ type: "bar", name: RNM[m], x: hs.map((h) => `${h} h ahead`), y: hs.map((h) => rows.find((r) => r.model === m && r.horizon_h === h)?.metrics[key] ?? null), marker: { color: col[m] }, text: hs.map((h) => { const v = rows.find((r) => r.model === m && r.horizon_h === h)?.metrics[key]; return v == null ? "" : v.toFixed(unit === "" ? 3 : 2); }), textposition: "outside", textfont: { size: 11 } })), { barmode: "group", yaxis: { title: lower ? "average error (°C), lower is better" : "ranking score, higher is better" }, height: 340 }, title);
-  };
   /* a three-line reading under a chart: pattern, what it shows, what it means */
   const addRead = (sel, pattern, shows, means) => { const el = typeof sel === "string" ? $(sel) : sel; if (!el) return; el.closest(".card")?.querySelector(".readout")?.remove(); el.closest(".card")?.insertAdjacentHTML("beforeend", `<div class="readout">${[["trend", "#0a6bd6", "Pattern", pattern], ["layers", "#7048e8", "What it shows", shows], ["target", "#1f8a4c", "What it means", means]].map(([i, c, h, t]) => `<div><b style="color:${c}">${ico(i, c, 16)}${h}</b><p>${t}</p></div>`).join("")}</div>`); };
 
@@ -82,8 +75,6 @@ async function risk() {
   const sowhat = (t) => `<p class="sowhat">${ico("target", "#1f8a4c", 16)}<span><b>So what:</b> ${t}</span></p>`;
   const LET = ["J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"], dlab = (s) => new Date(s).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
   const top3 = (arr) => arr.map((v, i) => [v, i]).sort((a, b) => b[0] - a[0]).slice(0, 3);
-  const peakNote = (arr) => { const t = top3(arr), tot = arr.reduce((a, b) => a + b, 0) || 1; return { pk: t[0][1], share: Math.round((100 * t.reduce((a, x) => a + x[0], 0)) / tot), names: t.map((x) => MONTHS[x[1]]).join(", ") }; };
-  const monthBars = (arr, color, pale, hot) => { const { pk } = peakNote(arr); return miniBars(arr, arr.map((v, i) => (hot(i) ? color : pale)), { [pk]: arr[pk].toFixed(1) }, LET); };
   const cityBar = () => `<div class="tb controls">${cityChips()}</div>`;
   const yrLabels = (yrs) => yrs.map((y) => (y % 5 === 0 ? String(y).slice(2) : ""));
   const cards4 = (cs, p) => `<div class="icgrid rgrid">${cs.map((c, i) => hcard(c, p + i)).join("")}</div>`;
@@ -98,7 +89,7 @@ async function risk() {
     bindChips($("#rpane"), () => loadHz()); forecastPanel("heat"); finish();
     async function loadHz() {
       try {
-        const [sg, ev] = await Promise.all([api("/risk/signals?" + qs({ city: S.city })), api("/risk/events?" + qs({ city: S.city }))]), L = cityName(S.city), Y = sg.yearly, yrs = Y.map((y) => y.year), sp = Y.map((y) => y.spells), hn = Y.map((y) => y.hot_nights), ws = sg.worst_spell, pk = (a) => a.indexOf(Math.max(...a));
+        const sg = await api("/risk/signals?" + qs({ city: S.city })), L = cityName(S.city), Y = sg.yearly, yrs = Y.map((y) => y.year), sp = Y.map((y) => y.spells), hn = Y.map((y) => y.hot_nights), ws = sg.worst_spell, pk = (a) => a.indexOf(Math.max(...a));
         const hm = results("A", "heat_index_c"), h24 = hm.find((r) => r.model === "hgb" && r.horizon_h === 24).metrics, h6 = hm.find((r) => r.model === "hgb" && r.horizon_h === 6).metrics, pct = (x) => Math.round(100 * x);
         const cards = [
           { icon: "alert", color: "#d9480f", label: "Heatwave spells", big: cn(hmean(sp), 1), unit: " spells a year", chip: `Hot = above ${sg.p95_tmax.toFixed(0)} °C, the hottest 5% of days here`, viz: miniBars(sp, sp.map((v, i) => (i === pk(sp) ? "#c92a2a" : "#f0b8a0")), { [pk(sp)]: String(sp[pk(sp)]) }, yrLabels(yrs)),
@@ -172,7 +163,7 @@ async function risk() {
     const lvl = (p) => (p >= 90 ? ["green", "Normal"] : p >= 75 ? ["yellow", "Watch"] : p >= 50 ? ["orange", "Drought alert"] : ["red", "Severe drought"]);
     async function loadCz() {
       try {
-        const c = await api("/risk/crops?" + qs({ city: S.city })), Y = c.years, yrs = Y.map((y) => y.year), L = c.city, rp = Y.map((y) => y.rain_pct), id = Y.map((y) => y.idx), dry = Y.map((y) => y.kharif_dry_spell_d), hot = Y.map((y) => y.kharif_hot_days);
+        const c = await api("/risk/crops?" + qs({ city: S.city })), Y = c.years, yrs = Y.map((y) => y.year), L = c.city, rp = Y.map((y) => y.rain_pct), id = Y.map((y) => y.idx), dry = Y.map((y) => y.kharif_dry_spell_d);
         const dY = Y.filter((y) => y.rain_pct < 75), nY = Y.filter((y) => y.rain_pct >= 75), avg = (a, f) => (a.length ? hmean(a.map(f)) : NaN), dI = avg(dY, (y) => y.idx), nI = avg(nY, (y) => y.idx), worst = Y[rp.indexOf(Math.min(...rp))], gap = dY.length ? Math.round(nI - dI) : 0;
         const cards = [
           { icon: "drop", color: "#e8590c", label: "Drought years", big: cn(dY.length, 0), unit: ` of ${Y.length} years under 75% of normal rain`, chip: `Worst: ${worst.year} · ${worst.rain_pct.toFixed(0)}% of normal`, viz: miniBars(rp, rp.map((p) => LV[lvl(p)[0]]), { [rp.indexOf(Math.min(...rp))]: Math.round(worst.rain_pct) + "%" }, yrLabels(yrs)),

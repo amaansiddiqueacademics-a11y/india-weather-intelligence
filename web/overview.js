@@ -361,12 +361,10 @@ async function skyOverview() {
 
   /* ------------ time-travel test of the models */
   const kt = (v, l, c) => `<div class="kt"><b${c ? ` style="color:${c}"` : ""}>${v}</b><span>${l}</span></div>`;
-  const winner = (name, line, close) => `<div class="winner"><span>★</span><div><b>Best model: ${name}</b><small>${line}${close ? " Close call: the runner-up is nearly as good." : ""}</small></div></div>`;
   const sm2 = { year: 2021 }, pad2 = (n) => String(n).padStart(2, "0");
   const splitOf = (y) => (y <= 2015 ? 0 : y <= 2018 ? 1 : 2);
   const apiModel = (m, risk) => (m === "linear" ? (risk === "heat" ? "ridge" : "logistic") : m);
   const sumName = (m, risk) => (risk === "heat" ? apiModel(m, risk) : m === "hgb" ? "hgb_calibrated" : m === "linear" ? "logistic_calibrated" : m);
-  const MCOL = { hgb: "#ffb74d", linear: "#4dd0e1", persistence: "#b39ddb", climatology: "#7ddc9a" };
   function syncDate() {
     const v = $("#sm_date").value; if (!v) return;
     const d = new Date(v + "T00:00:00"), y = d.getFullYear(), i = splitOf(y), frac = ((y - 2002) + (d - new Date(y, 0, 1)) / 31536000000) / 21;

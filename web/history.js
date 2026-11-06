@@ -2,9 +2,7 @@
 const hmean = (a) => a.reduce((x, y) => x + y, 0) / a.length;
 const hsd = (a) => { const m = hmean(a); return Math.sqrt(a.reduce((s, v) => s + (v - m) ** 2, 0) / Math.max(1, a.length - 1)); };
 function hols(x, y) { const mx = hmean(x), my = hmean(y); let sxy = 0, sxx = 0; x.forEach((v, i) => { sxy += (v - mx) * (y[i] - my); sxx += (v - mx) ** 2; }); const b = sxy / sxx; return { slope: b, intercept: my - b * mx }; }
-const hroll = (a, w) => a.map((_, i) => { const lo = i - Math.floor(w / 2), hi = lo + w; return lo < 0 || hi > a.length ? null : hmean(a.slice(lo, hi)); });
 const sgn = (v, d = 2) => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(d)}`;
-const guide = (t) => `<p class="guide">${ico("spark", "#0a6bd6", 16)}<span>${t}</span></p>`;
 const qcard = (id, q, a, extra = "", cls = "") => `<section class="card reveal"><h3 class="q" id="t_${id}">${q}</h3><p class="ans" id="a_${id}">${a}</p>${extra}<div id="${id}" class="chart ${cls}"></div></section>`;
 
 /* animated numbers, scroll reveal, charts that draw when they come into view */
@@ -41,15 +39,6 @@ const doyDate = (d) => new Date(2001, 0, d).toLocaleDateString("en-IN", { day: "
 const readBox = (items) => `<div class="read">${items.map(([h, t]) => `<div><small>${h}</small><p>${t}</p></div>`).join("")}</div>`;
 const legendChips = (l) => `<div class="lgd">${l.map(([c, t]) => `<span><i style="background:${c}"></i>${t}</span>`).join("")}</div>`;
 const hcard = (c, k) => `<div class="ic reveal"><div class="ich"><span class="ib" style="background:${c.color}1f">${ico(c.icon, c.color, 20)}</span><span>${c.label}</span></div><div class="icbig">${c.big}<small>${c.unit}</small></div>${c.chip ? `<span class="chip" style="background:${c.color}1a;color:${c.color}">${c.chip}</span>` : ""}<div class="icviz">${c.viz}</div><p>${c.text}</p><button class="anbtn" data-an="${k}" aria-expanded="false" style="--ac:${c.color}">Analysis <span aria-hidden="true">›</span></button><div class="ana" id="an_${k}" hidden>${c.more}</div></div>`;
-/* area chart that splits at zero so warm years fill red and cool years fill blue */
-function splitFill(x, y) {
-  const P = [], N = [];
-  for (let i = 0; i < x.length; i++) {
-    if (i) { const y1 = y[i - 1], y2 = y[i]; if (y1 * y2 < 0) { const xc = x[i - 1] + ((x[i] - x[i - 1]) * (0 - y1)) / (y2 - y1); P.push([xc, 0]); N.push([xc, 0]); } }
-    P.push([x[i], Math.max(y[i], 0)]); N.push([x[i], Math.min(y[i], 0)]);
-  }
-  return { P, N };
-}
 
 const lmInfo = (L) => landmarkInfo(L); /* shared with Overview: cache -> Wikipedia -> bundled photo */
 
@@ -81,7 +70,7 @@ function trendViz(yrs, tm, meanT, ol, warmY, coolY, total, sgnF) {
 }
 function bindTip(root) { let tip = $("#tvtip"); if (!tip) { tip = document.createElement("div"); tip.id = "tvtip"; tip.className = "tvtip"; document.body.append(tip); } root.querySelectorAll(".tdot").forEach((g) => { g.addEventListener("mousemove", (e) => { tip.textContent = g.dataset.tip; tip.style.opacity = 1; tip.style.left = e.clientX + 14 + "px"; tip.style.top = e.clientY - 34 + "px"; }); g.addEventListener("mouseleave", () => { tip.style.opacity = 0; }); }); }
 
-async function history() {
+async function historyPage() { /* not `history`: a global function of that name would replace window.history */
   const qc = new URLSearchParams(location.hash.split("?")[1] || "").get("city"); if (qc && S.meta.locations.some((l) => l.location_id === qc)) S.city = qc;
   const L = S.meta.locations.find((l) => l.location_id === S.city), y0 = +L.first_day.slice(0, 4), y1 = +L.last_day.slice(0, 4), st = { a: y0, b: y1, cal: "temp", dv: "temperature_c", year: null };
   view.innerHTML = `<div class="page"><header class="phead reveal"><h1 id="hh1">Climate history: ${esc(L.city)}</h1><p class="lede" id="hlede">Temperature, rainfall and heat for the last ${y1 - y0 + 1} years.</p></header>
@@ -109,7 +98,7 @@ async function history() {
       const yearsOf = (c) => yrs.filter((_, i) => cls[i] === c), nDry = yearsOf("dry").length, nWet = yearsOf("wet").length, nNorm = N - nDry - nWet;
       const pctW = (y) => `${sgn(pct[yrs.indexOf(y)], 0)}%`;
       const sortedDry = [...dry].sort((a, b) => a - b), medDry = sortedDry[Math.floor(N / 2)], worstSpell = ev.dry_spells[0];
-      const unit = noDanger ? "feels like 32–41 °C" : "feels like 41 °C or more", hotLab = noDanger ? "Very hot days" : "Dangerously hot days", hd0 = ev.hot_days[0];
+      const unit = noDanger ? "feels like 32–41 °C" : "feels like 41 °C or more", hd0 = ev.hot_days[0];
       const hm = ev.hot_by_month.map((r) => (noDanger ? r.hot : r.danger)), topHm = [...hm.keys()].sort((a, b) => hm[b] - hm[a]).slice(0, 2).sort((a, b) => a - b), hotSeason = hm.some((v) => v > 0) ? topHm.map((i) => MONTHS[i]).join(" and ") : "none";
       const nd = nS >= 0 && dS >= 0 ? (nS > dS ? { big: "Nights", unit: " are warming faster", k: "n" } : { big: "Days", unit: " are warming faster", k: "d" }) : nS < 0 && dS < 0 ? { big: nS < dS ? "Nights" : "Days", unit: " are cooling faster", k: "c" } : { big: "Mixed", unit: " day/night change", k: "m" };
       st.year = st.year && yrs.includes(st.year) ? st.year : warmY.year;
@@ -227,5 +216,4 @@ async function history() {
     if (cor) { const m = cor.result; plot("#cor", [{ type: "heatmap", x: m.variables, y: m.variables, z: m.matrix, zmin: -1, zmax: 1, colorscale: [[0, "#2166ac"], [0.5, "#f7f7f7"], [1, "#b2182b"]], xgap: 2, ygap: 2, text: m.matrix.map((r) => r.map((v) => (Math.abs(v) >= 0.5 ? v.toFixed(2) : ""))), texttemplate: "%{text}", textfont: { size: 10 }, hovertemplate: "%{y} vs %{x}: %{z}<extra></extra>" }], { margin: { l: 120, b: 100, t: 6, r: 10 }, yaxis: { autorange: "reversed" } }, "Rank correlation between daily weather variables.", { animate: false }); }
     scrollReveal($("#eda"));
   } catch (e) { $("#eda").innerHTML = err(e); }
-  decorate('history');
 }

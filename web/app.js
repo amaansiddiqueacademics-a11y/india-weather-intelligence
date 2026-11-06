@@ -84,11 +84,10 @@ function plot(el, data, layout = {}, summary = "", opt = {}) {
   let cap = el.nextElementSibling; if (!cap || !cap.classList.contains("sr-only")) { cap = document.createElement("p"); cap.className = "sr-only"; el.after(cap); }
   cap.textContent = "Text summary: " + (summary || "chart without summary");
 }
-const chartCard = (id, takeaway, extra = "", cls = "") => `<section class="card reveal"><h3 class="takeaway" id="t_${id}">${takeaway}</h3>${extra}<div id="${id}" class="chart ${cls}"></div></section>`;
 const warm = RAMPS.temp.map((c, i) => [i / (RAMPS.temp.length - 1), c]), wet = RAMPS.rain.map((c, i) => [i / (RAMPS.rain.length - 1), c]);
 
 /* ------------------------------------------------------------------ router */
-const routes = { overview: skyOverview, models: modelsPage, history, engineering, warehouse, olap, risk, method };
+const routes = { overview: skyOverview, models: modelsPage, history: historyPage, engineering, warehouse, olap, risk, method };
 async function route() {
   const name = (location.hash.replace(/^#\//, "") || "overview").split("?")[0];
   document.querySelectorAll(".topbar nav a").forEach((a) => { if (a.getAttribute("href") === "#/" + name) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current"); });
@@ -98,7 +97,6 @@ async function route() {
     if (!S.meta) S.meta = await api("/meta");
     if (!S.meta.locations.some((l) => l.location_id === S.city)) S.city = S.meta.locations[0].location_id;
     await (routes[name] || skyOverview)();
-    decorate(name);
     view.focus({ preventScroll: true });
   } catch (e) { view.innerHTML = err(e); }
 }
@@ -112,7 +110,3 @@ function resultView(f) {
   return `<div class="scroll"><table><tbody>${Object.entries(r).map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(JSON.stringify(v))}</td></tr>`).join("")}</tbody></table></div>`;
 }
 
-/* ------------------------------------------------------- the story that links the pages */
-const JOURNEY = [["overview", "See today", "What is the weather like right now?"], ["history", "Look back", "How has it changed over 21 years?"], ["engineering", "Trust the data", "How raw files became clean records"], ["warehouse", "See where it lives", "How the data is organised for questions"],
-  ["olap", "Ask questions", "Slice and compare the data yourself"], ["risk", "Look ahead", "Which hazards hurt, and can we see them coming?"], ["models", "Compare all models", "What each model takes in, gives out and scores"], ["method", "Know the limits", "What we did and what we cannot claim"]];
-function decorate() { /* intentionally empty: pages stand on their own */ }

@@ -24,7 +24,7 @@ const MRCOL = { hgb: "#0072B2", hgb_calibrated: "#0072B2", ridge: "#CC79A7", rid
 const mrHL = (p, h) => (p.id === "crop" ? "next season" : p.id === "rain" ? "day " + h / 24 : "+" + h + " h");
 
 async function modelsPage() {
-  const [ml, rc] = await Promise.all([api("/ml/summary"), api("/ml/cases?kind=rain")]);
+  const ml = await api("/ml/summary");
   const find = (p, h, m) => ml.results.find((r) => r.risk.startsWith(p.risk) && (p.id === "rain" ? r.target.startsWith("rain") : r.target === p.target) && r.horizon_h === h && r.model === m);
   /* accuracy is not stored, so derive it from prevalence, precision and recall */
   const val = (r, k) => { const m = r.metrics; if (k === "mse") return m.rmse * m.rmse; if (k === "accuracy") return 1 - m.prevalence * m.recall * (1 / m.precision - 1) - m.prevalence * (1 - m.recall); return m[k]; };
@@ -33,15 +33,15 @@ async function modelsPage() {
   const pickBest = (rows, p) => rows.reduce((a, b) => (better(p, val(b.r, p.primary), val(a.r, p.primary)) ? b : a));
   const rowsAt = (p, h, list) => list.map((m) => ({ m, r: find(p, h, m) })).filter((x) => x.r);
   const pc = (v, d = 0) => (100 * v).toFixed(d) + "%";
-  const rs = rc.summary, alerts = rs.caught + rs.false_alarms, rr = (m, h = 24) => find(AMP[2], h, m).metrics;
+  const rr = (m, h = 24) => find(AMP[2], h, m).metrics;
   const T = AMP[0];
-  const t = (h, m) => find(T, h, m).metrics.mae, tb24 = Math.min(t(24, "persistence"), t(24, "climatology"));
+  const t = (h, m) => find(T, h, m).metrics.mae;
 
   /* ---- the short answer, one card per question ---- */
   const answer = (p) => {
-    const h = p.id === "crop" ? 0 : 24, all = rowsAt(p, h, [...p.models, ...p.base]), best = pickBest(all, p), trained = pickBest(rowsAt(p, h, p.models), p), yard = pickBest(rowsAt(p, h, p.base), p);
+    const h = p.id === "crop" ? 0 : 24, trained = pickBest(rowsAt(p, h, p.models), p), yard = pickBest(rowsAt(p, h, p.base), p);
     const pv = (x) => val(x.r, p.primary), tw = better(p, pv(trained), pv(yard)), g = Math.round((100 * Math.abs(pv(yard) - pv(trained))) / pv(yard));
-    const big = p.id === "rain" ? pv(trained).toFixed(2) : pv(trained).toFixed(2), unit = p.id === "rain" ? "ranking skill (1 is perfect)" : (p.id === "crop" ? "t/ha average error" : "°C average error");
+    const big = pv(trained).toFixed(2), unit = p.id === "rain" ? "ranking skill (1 is perfect)" : (p.id === "crop" ? "t/ha average error" : "°C average error");
     const line = p.id === "rain" ? `Good at ranking risky days, but only ${pc(rr("hgb_calibrated").precision)} of alerts were right, so treat it as a watch-list.`
       : tw ? `${g}% smaller error than the best baseline (${AMN[yard.m].toLowerCase()}).` : `The baseline "${AMN[yard.m].toLowerCase()}" was better (${fmtv(pv(yard), p.cols[0])}). No trained model beat it.`;
     const wc = tw ? "#1f8a4c" : "#c62828", sub = p.id === "rain" ? "ranking skill, 1 is perfect" : unit;

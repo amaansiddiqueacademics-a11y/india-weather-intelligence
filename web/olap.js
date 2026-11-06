@@ -2,13 +2,9 @@
 const OMEAS = { avg_temp_c: "Average temperature", avg_tmax_c: "Typical daily high", max_temp_c: "Hottest reading", min_temp_c: "Coldest reading", total_rain_mm: "Total rain", rainy_days: "Rainy days", heavy_rain_days: "Heavy-rain days", hot_days: "Days above 40 °C", avg_humidity_pct: "Average humidity", avg_hi_max_c: "Typical peak 'feels like'", days: "Days counted" };
 const OTIME = [["all", "Whole period"], ["year", "Each year"], ["year_season", "Each year and season"], ["year_month", "Each year and month"], ["day", "Each day"]];
 const OPLACE = [["all", "All cities"], ["region", "By region"], ["state", "By state"], ["city", "By city"]];
-const anaBlock = (k, color, html) => `<button class="anbtn" data-an="${k}" aria-expanded="false" style="--ac:${color}">Analysis <span aria-hidden="true">›</span></button><div class="ana" id="an_${k}" hidden>${html}</div>`;
-const anH = (h, p) => `<h5>${h}</h5><p>${p}</p>`;
-function bindAna(root) { root.querySelectorAll(".anbtn").forEach((b) => b.addEventListener("click", () => { const p = $("#an_" + b.dataset.an), open = p.hidden; p.hidden = !open; b.setAttribute("aria-expanded", open); b.firstChild.textContent = open ? "Hide analysis " : "Analysis "; b.lastElementChild.textContent = open ? "‹" : "›"; })); }
 const hlSql = (s) => esc(s).replace(/\b(SELECT|FROM|WHERE|GROUP BY|ORDER BY|JOIN|ON|USING|WITH|AS|AND|IN|BETWEEN|HAVING|LIMIT|FILTER|DISTINCT|DESC|ASC|ROLLUP|NULLS|OVER)\b/g, '<b class="sk">$1</b>').replace(/\b(count|sum|avg|min|max|round|stddev_samp|regr_slope|regr_r2|corr|coalesce|COALESCE)\(/g, '<i class="sf">$1</i>(');
 const sqlBox = (id, sql) => `<div class="sqlwrap"><button class="ghost copybtn2" data-copy="${id}">Copy SQL</button><pre class="sqlbox" id="${id}">${hlSql(sql)}</pre></div>`;
 function bindCopy(root, texts) { root.querySelectorAll("[data-copy]").forEach((b) => b.addEventListener("click", async () => { try { await navigator.clipboard.writeText(texts[b.dataset.copy]); b.textContent = "Copied"; } catch { b.textContent = "Copy failed"; } setTimeout(() => (b.textContent = "Copy SQL"), 1500); })); }
-const FRIENDLY = { tmean_c: "Mean temp", tmax_c: "Max temp", tmin_c: "Min temp", precip_mm: "Rain", rh_mean: "Humidity", wind_mean_kmh: "Wind", pressure_mean_hpa: "Pressure", soil_moisture: "Soil moisture", et0_mm: "Evaporation", hi_max_c: "Feels-like peak" };
 
 function analysisCards(rows, valCol, labelFn, timeCol) {
   const v = rows.map((r) => +r[valCol]).filter((x) => !Number.isNaN(x)); if (v.length < 2) return "";
@@ -33,7 +29,6 @@ async function olap() {
   finish();
   const run3 = () => { const texts = {}; $("#p3").innerHTML = `<div class="sqllist">${qlist.map((q, i) => `<section class="sqlitem reveal"><div class="sqlh"><span class="qn">${i + 1}</span><b>${esc(q.title)}</b><button class="ghost copybtn2" data-copy="sql_${q.id}">Copy SQL</button></div><pre class="sqlbox" id="sql_${q.id}">${hlSql(q.sql)}</pre><div class="qprev" id="prev_${q.id}"><span class="muted">Running…</span></div></section>`).join("")}</div>`; qlist.forEach((q) => (texts["sql_" + q.id] = q.sql)); bindCopy($("#p3"), texts); scrollReveal($("#p3")); qlist.forEach(async (q) => { const el = $("#prev_" + q.id); try { const r = await api("/sql/run?" + qs({ id: q.id })), cols = r.columns, rows = r.rows.slice(0, 3); el.innerHTML = `<div class="scroll"><table class="pg"><thead><tr>${cols.map((c) => `<th>${esc(c)}</th>`).join("")}</tr></thead><tbody>${rows.map((x) => `<tr>${cols.map((c) => `<td class="${typeof x[c] === "number" ? "num" : ""}">${x[c] === null ? "<i>null</i>" : esc(x[c])}</td>`).join("")}</tr>`).join("")}</tbody></table></div><p class="pgf">Showing ${rows.length} of ${r.rows.length} rows · ${r.elapsed_ms} ms</p>`; } catch (e) { el.innerHTML = `<span class="muted">${esc(e.message)}</span>`; } }); };
   explorer(); pivotTab(); run3();
-  function drawChart() {}
   function explorer() {
     const cur = { m: ["avg_temp_c"], t: "year", g: "region", season: "", cities: [], a: 2002, b: 2022 };
     $("#p1").innerHTML = `<div class="grid g3"><div class="stepbox reveal"><h3><span class="sn">1</span>Measure</h3><div class="pillrow" id="o_m" style="margin-top:10px">${Object.keys(meta.measures).filter((k) => OMEAS[k]).map((k) => `<button type="button" data-v="${k}" aria-pressed="${cur.m.includes(k)}">${OMEAS[k]}</button>`).join("")}</div></div>
@@ -52,7 +47,6 @@ async function olap() {
       const out = $("#oout"); out.innerHTML = skeleton();
       try { const r = await api("/olap/aggregate?" + qs({ time_level: cur.t, geo_level: cur.g, measures: cur.m.join(","), cities: cur.cities.join(","), seasons: cur.season, year_from: cur.a, year_to: cur.b }));
         const meas = Object.keys(r.measure_labels), dims = r.columns.filter((c) => !meas.includes(c)), m0 = meas[0], nm = (x) => dims.map((d) => (d === "month" ? MONTHS[x[d] - 1] : x[d])).join(" · ") || "everything";
-        const hi = r.rows.length ? maxBy(r.rows, (x) => x[m0]) : null, lo = r.rows.length ? minBy(r.rows, (x) => x[m0]) : null;
         const tcol = ["full_date", "year"].find((d) => dims.includes(d));
         out.innerHTML = `${r.rows.length ? analysisCards(r.rows, m0, nm, tcol && dims.length === 1 ? tcol : null) : ""}<section class="card reveal"><h3 class="q">${OMEAS[m0] ?? m0}</h3><p class="ans">${r.rows.length ? `${r.rows.length} groups in ${r.elapsed_ms} ms.` : "No rows match these filters. Widen the selection."}</p>${r.rows.length ? exportBar("ox") : ""}<div id="ochart" class="chart tall"></div></section><details class="card more reveal" style="margin-top:12px"><summary>SQL and table</summary>${sqlBox("osql", r.sql)}${table(r.rows)}</details>`; finish(out); if (r.rows.length) { bindExport("ox", r.rows, r.sql); bindCopy(out, { osql: r.sql }); }
         if (r.rows.length) { const td = ["full_date", "year", "month"].find((d) => dims.includes(d)), others = dims.filter((d) => d !== td), lbl = OMEAS[m0] ?? m0;
