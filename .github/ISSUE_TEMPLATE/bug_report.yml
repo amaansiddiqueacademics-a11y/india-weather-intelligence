@@ -1,0 +1,41 @@
+name: Bug report
+description: Something doesn't work as described in the README
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. docker compose up -d --build
+        2. docker compose run --rm app python -m wx.pipeline
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Error message or logs
+      description: Paste the full traceback or the failing pipeline step's output.
+      render: text
+  - type: dropdown
+    id: setup
+    attributes:
+      label: How are you running it?
+      options:
+        - Docker
+        - Own Python and PostgreSQL
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: Operating system and Python version
+      placeholder: Windows 11, Python 3.12.4

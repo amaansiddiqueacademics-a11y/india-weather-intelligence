@@ -15,7 +15,7 @@ A **data warehousing and data mining project** on 21 years of hourly weather for
 
 ## Contents
 
-[Results](#results) · [Quick start](#quick-start) · [Pipeline](#pipeline) · [Dashboard](#dashboard) · [API](#api) · [Tests](#tests) · [Layout](#layout) · [Limitations](#limitations) · [Credits and licences](#credits-and-licences)
+[Results](#results) · [Quick start](#quick-start) · [Pipeline](#pipeline) · [Dashboard](#dashboard) · [API](#api) · [Tests](#tests) · [Layout](#layout) · [Limitations](#limitations) · [Contributing](#contributing) · [Credits and licences](#credits-and-licences)
 
 ## Results
 
@@ -184,6 +184,10 @@ Raw data (`data/`) is not committed; `wx.download` recreates it from the public 
 - Delhi, Mumbai, Kolkata, Chennai, Bengaluru and Hyderabad have no usable crop history, so agriculture covers four cities.
 
 See `docs/DECISIONS.md` and the dashboard's Methodology page for details.
+
+## Contributing
+
+Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the checks to run and the project's conventions, and the [Code of Conduct](CODE_OF_CONDUCT.md). Please report security problems privately, as described in [SECURITY.md](SECURITY.md).
 
 ## Credits and licences
 
