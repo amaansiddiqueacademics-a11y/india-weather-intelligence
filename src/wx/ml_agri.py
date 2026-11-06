@@ -14,7 +14,6 @@ import numpy as np
 import pandas as pd
 from sklearn.ensemble import HistGradientBoostingRegressor
 from sklearn.linear_model import Ridge
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
@@ -92,7 +91,11 @@ def trend_baseline(df: pd.DataFrame) -> pd.Series:
 
 
 def main() -> dict:
-    conn = db.connect()
+    with db.connect() as conn:
+        return _main(conn)
+
+
+def _main(conn) -> dict:
     df = build(conn)
     if df.empty:
         print("no joinable weather/agri rows yet")

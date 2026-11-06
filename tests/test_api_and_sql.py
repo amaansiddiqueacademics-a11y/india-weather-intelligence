@@ -2,12 +2,10 @@
 (`python -m wx.etl_weather` etc. must have been run) and skip cleanly if it is absent."""
 from __future__ import annotations
 
-from datetime import datetime
-
 import pytest
 from fastapi.testclient import TestClient
 
-from wx import db, olap, predict as pr
+from wx import db, olap
 
 try:
     _c = db.connect()
@@ -171,3 +169,38 @@ def test_dashboard_map_file_is_served():
     import pandas as pd
     from wx import config
     assert set(pd.read_csv(config.LOCATIONS_CSV).state) <= names  # every city's state has an outline
+
+
+def test_rain_climatology_baseline_follows_the_month():
+    """'Usual climate' for heavy rain is the training-period rate for that city AND month, as in wx.ml."""
+    def prob(month):
+        r = client.post("/api/predict", json={"location_id": "BOM", "issue_time": f"2021-{month:02d}-15T06:00:00", "risk": "rain", "horizon_h": 24, "model": "climatology"})
+        assert r.status_code == 200
+        return r.json()["results"]["probability_heavy_rain"]
+    july, january = prob(7), prob(1)
+    assert july > 0.02 and january < 0.005  # Mumbai: monsoon vs dry season (the old code returned one annual rate for every month)
+
+
+@pytest.mark.parametrize("risk,model,target,name", [
+    ("heat", "persistence", "heat_index_c", "persistence"), ("heat", "climatology", "heat_index_c", "climatology"),
+    ("heat", "ridge", "heat_index_c", "ridge"), ("heat", "hgb", "heat_index_c", "hgb"),
+    ("rain", "hgb", "rain_24h_ge_64.5mm", "hgb_calibrated"), ("rain", "climatology", "rain_24h_ge_64.5mm", "climatology")])
+def test_model_info_describes_the_model_that_answered(risk, model, target, name):
+    j = client.post("/api/predict", json={"location_id": "DEL", "issue_time": "2021-05-10T12:00:00", "risk": risk, "horizon_h": 24, "model": model}).json()
+    mi = j["model_info"]
+    assert (mi["name"], mi["target"]) == (name, target)
+    summary = next(r for r in client.get("/api/ml/summary").json()["results"] if (r["model"], r["target"], r["horizon_h"]) == (name, target, 24))
+    key = "mae" if risk == "heat" else "pr_auc"
+    assert mi["historical_test_metrics"][key] == pytest.approx(summary["metrics"][key])
+    assert mi["baseline"] is (model in ("persistence", "climatology"))
+
+
+def test_ml_breakdown_accepts_risk_names():
+    by_name = client.get("/api/ml/breakdown", params={"risk": "heat", "target": "temperature_c", "horizon_h": 24}).json()
+    assert by_name and by_name == client.get("/api/ml/breakdown", params={"risk": "A", "target": "temperature_c", "horizon_h": 24}).json()
+    assert client.get("/api/ml/breakdown", params={"risk": "%", "target": "temperature_c", "horizon_h": 24}).status_code == 400
+
+
+def test_olap_rejects_unknown_measure():
+    assert client.get("/api/olap/aggregate", params={"measures": "avg_temp_c,bogus"}).status_code == 400
+    assert client.get("/api/olap/aggregate", params={"measures": "avg_temp_c,total_rain_mm"}).status_code == 200

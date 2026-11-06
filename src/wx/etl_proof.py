@@ -3,8 +3,6 @@ actual ETL functions, reconciliation against the warehouse, flagged-reading anal
 from __future__ import annotations
 
 import inspect
-import io
-from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -92,7 +90,6 @@ def stress_test() -> dict:
     gap_rows = [500, 501]
     t_before, t_after = pd.Timestamp(df.loc[499, "time"]), pd.Timestamp(df.loc[502, "time"])
     long_rows = list(range(700, 706))
-    n0 = len(df)
     df = df.drop(index=gap_rows + long_rows).reset_index(drop=True)
     plan.append(dict(case="2-hour hole in the record", planted="2 hourly rows deleted", stage="clean", rule="Gap fill (≤ 3 h)"))
     plan.append(dict(case="6-hour hole in the record", planted="6 hourly rows deleted", stage="clean", rule="Gap detected, left empty (> 3 h)"))

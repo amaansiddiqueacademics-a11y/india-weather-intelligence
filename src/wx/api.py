@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from . import config, db, etl_proof, models_viz, olap, predict as predict_mod, wh_explore
 
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     _warm_etl_evidence()  # defined below; resolved when the server starts
@@ -38,6 +39,14 @@ def cached(key: str, ttl: float, fn):
 
 def conn():
     return db.connect()
+
+
+def _check_day(month: int, day: int) -> None:
+    """Reject impossible calendar days such as 31 April (29 February is allowed)."""
+    try:
+        datetime(2020, month, day)
+    except ValueError:
+        raise ValueError(f"{day} is not a valid day in month {month}") from None
 
 
 def clean(o: Any) -> Any:
@@ -166,14 +175,15 @@ def live_air(city: str):
 
 
 @app.get("/api/normal")
-def normal(city: str, month: int, day: int, hour: int):
+def normal(city: str, month: int = Query(ge=1, le=12), day: int = Query(ge=1, le=31), hour: int = Query(ge=0, le=23)):
     """What is normal for this date and hour in the warehouse history (2002-2022)?"""
+    _check_day(month, day)
     with conn() as c:
         daily = c.execute("""SELECT round(avg(m.tmax_c)::numeric,1) AS tmax_mean, round(avg(m.tmin_c)::numeric,1) AS tmin_mean, round(stddev_samp(m.tmax_c)::numeric,2) AS tmax_sd,
                 round(avg(m.precip_mm)::numeric,2) AS rain_mean_mm, round((100.0*count(*) FILTER (WHERE m.precip_mm >= 2.5)/count(*))::numeric,0) AS rainy_day_pct,
                 count(DISTINCT m.year) AS years
             FROM star.mv_weather_daily m JOIN star.dim_location l USING (location_key)
-            WHERE l.location_id=%s AND abs(extract(doy from m.full_date) - extract(doy from make_date(2021, %s, %s))) <= 3""", (city, month, day)).fetchone()
+            WHERE l.location_id=%s AND abs(extract(doy from m.full_date) - extract(doy from make_date(2020, %s, %s))) <= 3""", (city, month, day)).fetchone()
         hourly = c.execute("""SELECT round(avg(f.temperature_c)::numeric,1) AS temp_mean, round(stddev_samp(f.temperature_c)::numeric,2) AS temp_sd, round(avg(f.heat_index_c)::numeric,1) AS hi_mean
             FROM star.fact_weather_hourly f JOIN star.dim_location l USING (location_key) JOIN star.dim_date d USING (date_key)
             WHERE l.location_id=%s AND d.month=%s AND abs(d.day - %s) <= 7 AND f.time_key=%s""", (city, month, day, hour)).fetchone()
@@ -199,7 +209,7 @@ def history(city: str, start: int = 2002, end: int = 2022, grain: str = "monthly
 
 
 @app.get("/api/history/distribution")
-def distribution(city: str, variable: str = "temperature_c", bins: int = 30):
+def distribution(city: str, variable: str = "temperature_c", bins: int = Query(30, ge=1, le=200)):
     cols = {"temperature_c", "relative_humidity_pct", "pressure_msl_hpa", "wind_speed_kmh", "heat_index_c"}
     if variable not in cols:
         raise ValueError(f"variable must be one of {sorted(cols)}")
@@ -214,7 +224,8 @@ def distribution(city: str, variable: str = "temperature_c", bins: int = 30):
 
 
 @app.get("/api/history/on-this-day")
-def on_this_day(city: str, month: int, day: int):
+def on_this_day(city: str, month: int = Query(ge=1, le=12), day: int = Query(ge=1, le=31)):
+    _check_day(month, day)
     with conn() as c:
         rows = c.execute("""SELECT m.year, round(m.tmax_c::numeric,1) AS tmax_c, round(m.tmin_c::numeric,1) AS tmin_c, round(m.precip_mm::numeric,1) AS rain_mm
             FROM star.mv_weather_daily m JOIN star.dim_location l USING (location_key) WHERE l.location_id=%s AND m.month=%s AND extract(day from m.full_date)=%s ORDER BY 1""", (city, month, day)).fetchall()
@@ -348,8 +359,8 @@ def history_events(city: str, start: int = 2002, end: int = 2022):
         r7 = g.precip_mm.rolling(7).sum()
         win = g[(g.month >= max(1, first_m - 1)) & (g.month <= min(12, wet[-1] + 1)) & (r7 >= 30)] if wet[0] <= wet[-1] else g[r7 >= 30]
         if len(win):
-            onset.append(dict(year=int(y), date=day(win.iloc[0]), doy=int(win.iloc[0].full_date.dayofyear)))
-            offset.append(dict(year=int(y), date=day(win.iloc[-1]), doy=int(win.iloc[-1].full_date.dayofyear)))
+            onset.append(dict(year=int(y), date=day(win.iloc[0]), doy=int(win.iloc[0].full_date.day_of_year)))
+            offset.append(dict(year=int(y), date=day(win.iloc[-1]), doy=int(win.iloc[-1].full_date.day_of_year)))
     return clean(dict(wet_months=wet, danger_exists=danger, threshold=thr, hot_days=hot_days, hot_streaks=hot_streaks, hot_by_month=by_month, dry_spells=spells[:8], longest_by_year=longest_by_year, wettest_days=wettest,
                       onset=onset, offset=offset, median_onset_doy=int(np.median([o["doy"] for o in onset])) if onset else None, median_offset_doy=int(np.median([o["doy"] for o in offset])) if offset else None))
 
@@ -502,7 +513,6 @@ def risk_crops(city: str):
 @app.get("/api/risk/signals")
 def risk_signals(city: str):
     """Early-warning signals per city: heatwave spells, hot nights, 3-day rain accumulation, rain concentration and the longest wet spell."""
-    import numpy as np
     df = _daily_frame(city)
     iso = lambda d: d.strftime("%Y-%m-%d")
 
@@ -526,7 +536,6 @@ def risk_signals(city: str):
     for y, g in df.groupby("year"):
         if len(g) < 360:
             continue
-        idx = g.index
         sp = [r for r in spells if df.year.iloc[r[0]] == y]
         top5 = float(g.precip_mm.nlargest(5).sum() / max(g.precip_mm.sum(), 1e-9))
         yearly.append(dict(year=int(y), spells=len(sp), spell_days=int(sum(b - a + 1 for a, b in sp)), hot_nights=int((g.tmin_c >= p95_tmin).sum()), flood3=int((g.r3 >= 100).sum()), top5_share=100 * top5))
@@ -790,13 +799,18 @@ def ml_summary():
     return cached("ml_summary", 300, build)
 
 
+RISK_MODULE = {"heat": "A", "rain": "B", "agri": "C", "A": "A", "B": "B", "C": "C"}  # names as in /api/predict; module letters kept for compatibility
+
+
 @app.get("/api/ml/breakdown")
 def ml_breakdown(risk: str, target: str, horizon_h: int, scope: str = "location"):
     if scope not in ("location", "season"):
         raise ValueError("scope must be location or season")
+    if risk not in RISK_MODULE:
+        raise ValueError("risk must be heat, rain or agri")
     with conn() as c:
         rows = c.execute("""SELECT e.scope_value, m.model_name, e.metric_name, e.metric_value, e.n_samples FROM star.fact_model_evaluation e JOIN star.dim_model m USING (model_key)
-            WHERE m.risk_module LIKE %s AND m.target=%s AND m.horizon_h=%s AND e.scope=%s ORDER BY 1,2""", (risk + "%", target, horizon_h, scope)).fetchall()
+            WHERE m.risk_module LIKE %s AND m.target=%s AND m.horizon_h=%s AND e.scope=%s ORDER BY 1,2""", (RISK_MODULE[risk] + ":%", target, horizon_h, scope)).fetchall()
     return clean(rows)
 
 
@@ -833,7 +847,6 @@ class PredictRequest(BaseModel):
 def predict_endpoint(req: PredictRequest):
     with conn() as c:
         return clean(predict_mod.predict(c, req.location_id.upper(), req.issue_time.replace(tzinfo=None), req.risk, req.horizon_h, req.model))
-
 
 
 # ---------------------------------------------------------- model explanations

@@ -9,11 +9,6 @@ import numpy as np
 import pandas as pd
 
 ISSUE_HOURS = (0, 6, 12, 18)
-HOURLY_COLS = [
-    "temperature_c", "relative_humidity_pct", "dew_point_c", "pressure_msl_hpa", "cloud_cover_pct",
-    "wind_speed_kmh", "wind_gust_kmh", "wind_direction_deg", "heat_index_c", "apparent_temperature_c",
-    "soil_moisture_m3m3", "shortwave_radiation_wm2", "precipitation_mm",
-]
 STATIC_COLS = ["latitude", "longitude", "elevation_m"]
 
 
@@ -34,7 +29,7 @@ def make_features(g: pd.DataFrame) -> pd.DataFrame:
     f["temp_mean24"], f["temp_max24"], f["temp_min24"] = (t.rolling(24, min_periods=24).mean(),
                                                          t.rolling(24, min_periods=24).max(), t.rolling(24, min_periods=24).min())
     f["hi_max24"] = g["heat_index_c"].rolling(24, min_periods=24).max()
-    hour, doy = g.index.hour.to_numpy(), g.index.dayofyear.to_numpy()
+    hour, doy = g.index.hour.to_numpy(), g.index.day_of_year.to_numpy()
     f["sin_h"], f["cos_h"] = np.sin(2 * np.pi * hour / 24), np.cos(2 * np.pi * hour / 24)
     f["sin_d"], f["cos_d"] = np.sin(2 * np.pi * doy / 365.25), np.cos(2 * np.pi * doy / 365.25)
     wd = np.deg2rad(g["wind_direction_deg"])  # direction is circular: use sin/cos, never the raw angle

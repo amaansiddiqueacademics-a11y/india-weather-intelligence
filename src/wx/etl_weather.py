@@ -162,7 +162,7 @@ def impute_short_gaps(df: pd.DataFrame) -> tuple[pd.DataFrame, int, int]:
     df = df.copy()
     df["is_imputed"] = False
     filled_cells = 0
-    for loc, idx in df.groupby("location_id", sort=False).groups.items():
+    for _loc, idx in df.groupby("location_id", sort=False).groups.items():
         block = df.loc[idx, INTERP_COLS]
         before = block.isna()
         new = block.interpolate(method="linear", limit_area="inside")
@@ -281,7 +281,7 @@ def run(raw_dir: Path | None = None, location_ids: list[str] | None = None) -> d
         steps.add("clean", "Gap detection / hourly reindex", "Reindex each city to a complete hourly grid so gaps become explicit.",
                   ["obs_time"], added)
         before = col_stats(df, INTERP_COLS)
-        df, cells, rows_imputed = impute_short_gaps(df)
+        df, cells, _ = impute_short_gaps(df)
         steps.add("clean", f"Short-gap interpolation (<= {MAX_GAP_H} h)", "Linear interpolation for brief gaps; longer gaps and rainfall stay missing.",
                   INTERP_COLS, cells, before, col_stats(df, INTERP_COLS))
         df, out_counts = flag_outliers(df)

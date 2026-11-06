@@ -80,5 +80,5 @@ def build(conn: psycopg.Connection) -> dict:
 
 
 if __name__ == "__main__":
-    c = db.connect()
-    print(json.dumps(build(c)))
+    with db.connect() as c:
+        print(json.dumps(build(c)))

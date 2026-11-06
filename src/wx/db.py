@@ -29,7 +29,3 @@ def apply_ddl(conn: psycopg.Connection) -> None:
     for name in DDL_FILES:
         conn.execute((config.SQL_DIR / name).read_text(encoding="utf-8"))
     conn.commit()
-
-
-def query(conn: psycopg.Connection, sql: str, params: tuple | dict | None = None) -> list[dict]:
-    return conn.execute(sql, params).fetchall()

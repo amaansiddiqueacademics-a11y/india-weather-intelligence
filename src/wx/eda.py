@@ -153,9 +153,9 @@ def store(conn, findings: list[dict]) -> None:
 
 
 def main() -> None:
-    conn = db.connect()
-    f = compute(conn)
-    store(conn, f)
+    with db.connect() as conn:
+        f = compute(conn)
+        store(conn, f)
     for x in f:
         print(f"[{x['id']}] {x['title']}\n   {x['interpretation']}")
 

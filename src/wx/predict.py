@@ -5,7 +5,6 @@ from datetime import datetime, timedelta
 from functools import lru_cache
 
 import joblib
-import numpy as np
 import pandas as pd
 import psycopg
 
@@ -90,8 +89,6 @@ def predict(conn: psycopg.Connection, location_id: str, issue: datetime, risk: s
     target_time = issue + timedelta(hours=horizon_h)
     out = dict(location_id=location_id, risk=risk, horizon_h=horizon_h, model=model, issue_time=issue.isoformat(), target_time=target_time.isoformat(),
                kind="own-model prediction (not observed data and not an external forecast)")
-    reg_meta = {r["model_name"]: r for r in conn.execute(
-        "SELECT m.model_name, m.target, r.metrics, r.trained_at, r.code_version FROM star.dim_model m JOIN ml.model_registry r USING (model_key) WHERE m.horizon_h=%s", (horizon_h,))}
     if risk == "heat":
         results = {}
         for tname, target in (("temp", "temperature_c"), ("hi", "heat_index_c")):
@@ -114,7 +111,7 @@ def predict(conn: psycopg.Connection, location_id: str, issue: datetime, risk: s
                                temp_24h_ago_c=round(float(row["temp_l24"].iloc[0]), 1)),
                    explanation=(f"Forecast heat index {hi_pred} °C at the target time falls in the weather-derived band '{heat_category(hi_pred)}'. "
                                 "The heat index combines temperature and humidity into how hot it feels; it is an indicator, not a medical diagnosis or an official warning."))
-        meta_key = "hgb" if model not in reg_meta else model
+        info_target, info_name = "heat_index_c", model  # the dashboard's headline number is the heat index
     else:
         art = _artifact(f"rain_{horizon_h}h_v1.joblib")
         row, g = _row_features(conn, location_id, issue, art)
@@ -140,16 +137,32 @@ def predict(conn: psycopg.Connection, location_id: str, issue: datetime, risk: s
                                pressure_change_24h_hpa=round(float(row["pres_d24"].iloc[0]), 1), soil_moisture=round(float(row["soil"].iloc[0]), 3)),
                    explanation=(f"Estimated probability that the 24 h ending at the target time brings at least {art['rain_threshold_mm']:g} mm of rain: {prob:.1%}. "
                                 "Heavy rain is rare, so even a well-calibrated low probability can matter. This is rainfall, not flood risk: flooding also depends on drainage and terrain."))
-        meta_key = "hgb_calibrated" if model == "hgb" else "logistic_calibrated" if model == "logistic" else model
-    meta = reg_meta.get(meta_key)
-    out["model_info"] = None if meta is None else dict(name=meta_key, version="v1", trained_at=meta["trained_at"].isoformat(), code_version=meta["code_version"],
-                                                         historical_test_metrics=(meta["metrics"] or {}).get("test"), note="Test metrics describe average skill on 2019-2022, not the certainty of this single prediction.")
-    if meta is None:
-        out["model_info"] = dict(name=model, version="v1", note="Baseline model: no registry entry; see /api/ml/summary for its test metrics.")
+        info_target, info_name = f"rain_24h_ge_{art['rain_threshold_mm']:g}mm", f"{model}_calibrated" if model in ("hgb", "logistic") else model
+    out["model_info"] = _model_info(conn, "A" if risk == "heat" else "B", info_target, horizon_h, info_name)
     return out
 
 
+def _model_info(conn, module: str, target: str, horizon_h: int, name: str) -> dict:
+    """Describe exactly the model that answered: its own 2019-2022 test metrics (baselines included) and, for trained models,
+    its registry entry. Matching on module + target + horizon + name keeps e.g. the temperature and heat-index `hgb` apart."""
+    m = conn.execute("""SELECT m.model_key, m.is_baseline, r.trained_at, r.code_version FROM star.dim_model m LEFT JOIN ml.model_registry r USING (model_key)
+                        WHERE m.risk_module LIKE %s AND m.target=%s AND m.horizon_h=%s AND m.model_name=%s""", (module + "%", target, horizon_h, name)).fetchone()
+    info = dict(name=name, target=target, version="v1", note="Test metrics describe average skill on 2019-2022, not the certainty of this single prediction.")
+    if m is None:
+        return info
+    rows = conn.execute("SELECT metric_name, metric_value FROM star.fact_model_evaluation WHERE model_key=%s AND scope='overall' AND scope_value='all'",
+                        (m["model_key"],)).fetchall()
+    info["historical_test_metrics"] = {r["metric_name"]: r["metric_value"] for r in rows} or None
+    info["baseline"] = bool(m["is_baseline"])
+    if m["trained_at"] is not None:
+        info.update(trained_at=m["trained_at"].isoformat(), code_version=m["code_version"])
+    return info
+
+
 def _clim_rain(conn, location_id: str, month: int, horizon_h: int) -> float:
+    """Training-period heavy-rain rate for this city and issue month (the same definition wx.ml uses for its baseline).
+    Every stored climatology prediction for a (city, month) carries that rate, so averaging them recovers it exactly."""
     r = conn.execute("""SELECT avg(p.probability) AS p FROM star.fact_prediction p JOIN star.dim_model m USING (model_key) JOIN star.dim_location l USING (location_key)
-                        WHERE l.location_id=%s AND m.model_name='climatology' AND m.risk_module LIKE 'B%%' AND m.horizon_h=%s""", (location_id, horizon_h)).fetchone()
+                        WHERE l.location_id=%s AND m.model_name='climatology' AND m.risk_module LIKE 'B%%' AND m.horizon_h=%s
+                          AND (p.issue_date_key / 100) %% 100 = %s""", (location_id, horizon_h, month)).fetchone()
     return float(r["p"] or 0.0)

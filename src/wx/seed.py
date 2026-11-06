@@ -21,8 +21,8 @@ def seed_dim_date(conn: psycopg.Connection, start: str = "1997-01-01", end: str 
     d["date_key"] = d.full_date.dt.strftime("%Y%m%d").astype(int)
     d["year"], d["quarter"], d["month"] = d.full_date.dt.year, d.full_date.dt.quarter, d.full_date.dt.month
     d["month_name"], d["day"] = d.full_date.dt.month_name(), d.full_date.dt.day
-    d["day_of_year"], d["iso_week"] = d.full_date.dt.dayofyear, d.full_date.dt.isocalendar().week.astype(int)
-    d["day_name"], d["is_weekend"] = d.full_date.dt.day_name(), d.full_date.dt.dayofweek >= 5
+    d["day_of_year"], d["iso_week"] = d.full_date.dt.day_of_year, d.full_date.dt.isocalendar().week.astype(int)
+    d["day_name"], d["is_weekend"] = d.full_date.dt.day_name(), d.full_date.dt.day_of_week >= 5
     d["imd_season"] = d.month.map(imd_season)
     cols = ["date_key", "full_date", "year", "quarter", "month", "month_name", "day", "day_of_year",
             "iso_week", "day_name", "is_weekend", "imd_season"]

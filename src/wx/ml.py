@@ -61,7 +61,7 @@ def load_hourly(conn: psycopg.Connection, since_date_key: int = 0) -> pd.DataFra
     return pd.DataFrame(conn.execute(sql, (since_date_key,)).fetchall())
 
 
-def build_dataset(hourly: pd.DataFrame, rain_thr: float | None) -> pd.DataFrame:
+def build_dataset(hourly: pd.DataFrame) -> pd.DataFrame:
     parts = []
     for loc, g in hourly.groupby("location_id", sort=False):
         g = g.set_index("obs_time").sort_index()
@@ -223,12 +223,15 @@ def register(conn, model_key, artifact, train_n, feats, params, metrics) -> None
 
 
 def main() -> dict:
+    with db.connect() as conn:
+        return _main(conn)
+
+
+def _main(conn) -> dict:
     t0 = time.time()
-    conn = db.connect()
     hourly = load_hourly(conn)
     loc_keys = {r["location_id"]: r["location_key"] for r in conn.execute("SELECT location_id, location_key FROM star.dim_location")}
-    df = build_dataset(hourly, None)
-    train_mask = df.split == "train"
+    df = build_dataset(hourly)
     # climatology from TRAINING rows only
     hourly_idx = hourly.set_index("obs_time")
     tr_h = hourly_idx[hourly_idx.index.year <= SPLITS["train"][1]]

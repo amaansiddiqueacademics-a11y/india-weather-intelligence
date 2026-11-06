@@ -11,7 +11,6 @@ from typing import Any
 import pandas as pd
 import psycopg
 
-from . import db
 
 # ------------------------------------------------------------------ OLAP
 TIME_LEVELS = {  # level -> (select/group expressions, label)
@@ -59,7 +58,10 @@ def aggregate(conn: psycopg.Connection, time_level: str, geo_level: str, measure
     """Group the daily cube by a time level and a geography level (roll-up/drill-down/slice/dice)."""
     if time_level not in TIME_LEVELS or geo_level not in GEO_LEVELS:
         raise ValueError("unknown level")
-    measures = [m for m in measures if m in MEASURES] or ["avg_temp_c"]
+    measures = [m for m in measures if m] or ["avg_temp_c"]
+    unknown = [m for m in measures if m not in MEASURES]
+    if unknown:  # reject rather than silently answering a different question
+        raise ValueError(f"unknown measure {unknown[0]!r}; use one of {sorted(MEASURES)}")
     dims = TIME_LEVELS[time_level] + GEO_LEVELS[geo_level]
     where, params = _where(filters or {})
     sel = ", ".join([f"{d} AS {d.split('.')[1]}" for d in dims] + [f"{MEASURES[m][0]} AS {m}" for m in measures])

@@ -33,7 +33,7 @@ def _test_frame() -> pd.DataFrame:
         hourly = ml.load_hourly(conn, since_date_key=20181201)
     finally:
         conn.close()
-    df = ml.build_dataset(hourly, None)
+    df = ml.build_dataset(hourly)
     return df[df.split == "test"].copy()
 
 
