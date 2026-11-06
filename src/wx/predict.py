@@ -5,12 +5,13 @@ from datetime import datetime, timedelta
 from functools import lru_cache
 
 import joblib
+import numpy as np
 import pandas as pd
 import psycopg
 
-from . import config
+from . import config, ml
 from .derived import heat_category
-from .features import ISSUE_HOURS, STATIC_COLS, attach_climatology, make_features
+from .features import ISSUE_HOURS, STATIC_COLS, attach_climatology, make_features, same_hour_lag
 
 HEAT_MODELS = ("hgb", "ridge", "persistence", "climatology")
 RAIN_MODELS = ("hgb", "logistic", "climatology", "persistence")
@@ -28,6 +29,12 @@ def _artifact(name: str) -> dict:
     if not path.exists():
         raise PredictionError(f"model artifact {name} is not available (train models first)")
     return joblib.load(path)
+
+
+def conformal_halfwidth(art: dict, model: str, issue: datetime) -> float:
+    """90% half-width in force at the issue time (rolling conformal, see wx.ml); fixed validation width for older artifacts."""
+    roll = art.get("conformal_rolling", {}).get(model)
+    return float(art["conformal"][model]) if roll is None else float(ml.halfwidth_at(roll, np.datetime64(issue, "h")))
 
 
 def _window(conn: psycopg.Connection, location_id: str, issue: datetime) -> pd.DataFrame:
@@ -94,13 +101,13 @@ def predict(conn: psycopg.Connection, location_id: str, issue: datetime, risk: s
         for tname, target in (("temp", "temperature_c"), ("hi", "heat_index_c")):
             art = _artifact(f"heat_{tname}_{horizon_h}h_v1.joblib")
             row, g = _row_features(conn, location_id, issue, art)
-            if model == "persistence":
-                p, lo, hi = float(row["temp" if tname == "temp" else "hi"].iloc[0]), None, None
+            if model == "persistence":  # latest value at the target's hour of day (see features.same_hour_lag)
+                p, lo, hi = float(g.loc[pd.Timestamp(issue - timedelta(hours=same_hour_lag(horizon_h))), target]), None, None
             elif model == "climatology":
                 p, lo, hi = float(row["clim_temp" if tname == "temp" else "clim_hi"].iloc[0]), None, None
             else:
                 p = float(art["models"][model].predict(row[art["features"]].to_numpy(float))[0])
-                q = art["conformal"][model]
+                q = conformal_halfwidth(art, model, issue)
                 lo, hi = p - q, p + q
             results[target] = dict(predicted=round(p, 2), lower_90=None if lo is None else round(lo, 2), upper_90=None if hi is None else round(hi, 2),
                                    observed_at_target=_observed(conn, location_id, target_time, target))

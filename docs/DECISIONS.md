@@ -8,7 +8,8 @@
 - **Star vs snowflake.** Same surrogate-key values in both so queries are comparable. Agricultural facts are at city grain in the star and at district grain in the snowflake (location -> district -> state -> region).
 - **Rain target.** Event = at least 64.5 mm in the 24 h ending at the target time (IMD "heavy rain"), the highest candidate threshold with >= 100 training events. Probabilities are isotonic-calibrated on validation years; decision threshold maximises validation F1.
 - **Heat target.** Temperature and heat index at +6/+24/+72 h; heat bands follow NWS heat-index thresholds. Weather-derived indicator only.
-- **Uncertainty.** Split-conformal symmetric intervals from validation residuals (90%); empirical test coverage is reported.
+- **"No change" baseline.** The latest value at the target's hour of day: for +6 h the value 18 h before issue, for +24/+72 h the value at issue. Repeating a 06:00 reading as the 12:00 forecast would ignore the daily cycle and overstate model skill (it showed a 78% gain at +6 h; against the fair baseline it is 13-15%).
+- **Uncertainty.** Rolling split-conformal symmetric 90% intervals: the half-width at each issue time is the conformal quantile of errors already observed (target time passed) in a trailing window. A single width fixed on validation covered only 87-89% of test values because errors grow after 2018; the rolling width covers 89.5-90.1%. The window (30 to 365 days) is chosen per model on validation only (calibrate 2016-2017, score 2018). Live predictions use the width in force at the issue time.
 - **Splits.** Train 2002-2015, validation 2016-2018, test 2019-2022 (agriculture: <=2014 / 2015-2016 / 2017-2021). Issue times 00/06/12/18 local.
 - **Models.** scikit-learn Ridge/Logistic and HistGradientBoosting instead of LightGBM (not installed; avoids a new dependency).
 - **Frontend.** Static SPA served by FastAPI (vanilla JS + Plotly), no build step.

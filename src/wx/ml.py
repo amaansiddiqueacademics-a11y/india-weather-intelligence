@@ -1,8 +1,14 @@
 """Risk A (heat) and Risk B (heavy rainfall) models: training, evaluation, registry.
 
 Chronological split (no shuffling):  train 2002-2015 | validation 2016-2018 | test 2019-2022.
-Validation data is used for model selection, probability calibration, conformal
-interval width and decision thresholds; the test period is touched once for scoring.
+Validation data is used for model selection, probability calibration, the conformal
+window length and decision thresholds; the test period is touched once for scoring.
+
+90% intervals are rolling split-conformal: the half-width at each issue time is the
+conformal 90% quantile of the errors whose targets have already been observed within a
+trailing window (errors grow from the validation to the test years, so a single fixed
+width under-covered: 87-89% instead of 90%). The window length is chosen on validation
+only: calibrate on 2016-2017, pick the window whose 2018 coverage is closest to 90%.
 """
 from __future__ import annotations
 
@@ -24,10 +30,12 @@ from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
 from . import config, db
-from .features import ISSUE_HOURS, STATIC_COLS, attach_climatology, climatology, make_features
+from .features import ISSUE_HOURS, STATIC_COLS, attach_climatology, climatology, make_features, same_hour_lag
 
 SPLITS = {"train": (2002, 2015), "val": (2016, 2018), "test": (2019, 2022)}
 TEMP_HORIZONS = (6, 24, 72)
+CONFORMAL_WINDOWS_D = (30, 60, 90, 180, 365)
+CONFORMAL_MIN_N = 200  # fewer observed errors than this in the window: fall back to the fixed validation width
 RAIN_HORIZONS = (24, 48, 72)
 RAIN_THRESHOLD_CANDIDATES = (64.5, 35.5, 20.0)  # IMD "heavy" (24 h), "rather heavy", moderate-heavy
 HI_EVENT_C = 32.0  # NWS "extreme caution" heat-index band and above
@@ -71,6 +79,8 @@ def build_dataset(hourly: pd.DataFrame) -> pd.DataFrame:
         for h in TEMP_HORIZONS:
             f[f"y_temp_{h}"] = g["temperature_c"].shift(-h)
             f[f"y_hi_{h}"] = g["heat_index_c"].shift(-h)
+            f[f"b_temp_{h}"] = g["temperature_c"].shift(same_hour_lag(h))  # 'No change' baseline (not a model input)
+            f[f"b_hi_{h}"] = g["heat_index_c"].shift(same_hour_lag(h))
         rain24 = g["precipitation_mm"].rolling(24, min_periods=24).sum()
         for h in RAIN_HORIZONS:
             f[f"y_rainamt_{h}"] = rain24.shift(-h)
@@ -118,13 +128,55 @@ def calibration_curve(y: np.ndarray, prob: np.ndarray, bins: int = 8) -> list[di
             for b in range(len(q) - 1) if (idx == b).any()]
 
 
+# --------------------------------------------------------------- conformal intervals
+def conformal_q(res: np.ndarray, level: float = 0.9) -> float:
+    """Finite-sample split-conformal quantile of absolute errors."""
+    n = len(res)
+    k = min(n, int(np.ceil((n + 1) * level)))
+    return float(np.partition(res, k - 1)[k - 1])
+
+
+def rolling_halfwidth(hist_t: np.ndarray, hist_r: np.ndarray, at: np.ndarray, h: int, days: int, fallback: float) -> np.ndarray:
+    """Half-width at each time in `at` (sorted, unique): conformal quantile of errors whose TARGET time (issue + h)
+    is within the last `days` days and not after that time, i.e. errors a forecaster would already know."""
+    tt = hist_t + np.timedelta64(h, "h")
+    o = np.argsort(tt, kind="stable")
+    tt, rr = tt[o], hist_r[o]
+    hi = np.searchsorted(tt, at, side="right")
+    lo = np.searchsorted(tt, at - np.timedelta64(days, "D"), side="left")
+    return np.array([conformal_q(rr[a:b]) if b - a >= CONFORMAL_MIN_N else fallback for a, b in zip(lo, hi)])
+
+
+def fit_rolling_conformal(t_val, r_val, t_test, r_test, h: int) -> dict:
+    """Choose the window on validation only (2016-17 -> 2018), then compute widths for every issue time 2016-2022."""
+    yv = pd.DatetimeIndex(t_val).year.to_numpy()
+    at18 = np.unique(t_val[yv == 2018])
+    cov = {}
+    for d in CONFORMAL_WINDOWS_D:
+        w = rolling_halfwidth(t_val, r_val, at18, h, d, conformal_q(r_val[yv <= 2017]))
+        w_row = w[np.searchsorted(at18, t_val[yv == 2018])]
+        cov[d] = (abs(float(np.mean(r_val[yv == 2018] <= w_row)) - 0.9), float(np.mean(w)))
+    days = min(cov, key=lambda d: cov[d])
+    static = conformal_q(r_val)
+    times = np.unique(np.concatenate([t_val, t_test]))
+    hw = rolling_halfwidth(np.concatenate([t_val, t_test]), np.concatenate([r_val, r_test]), times, h, days, static)
+    return dict(window_days=int(days), static=static, times=times.astype("datetime64[h]"), halfwidth=hw.astype(np.float32))
+
+
+def halfwidth_at(roll: dict, t) -> np.ndarray:
+    """Look up the rolling half-width in force at issue time(s) t; fixed validation width before the series starts."""
+    t = np.asarray(t, dtype="datetime64[h]")
+    i = np.searchsorted(roll["times"], t, side="right") - 1
+    return np.where(i >= 0, roll["halfwidth"][np.clip(i, 0, None)], roll["static"]).astype(float)
+
+
 # --------------------------------------------------------------- regression
 def hgb_candidates():
     return [dict(learning_rate=0.06, max_leaf_nodes=31, max_iter=250, l2_regularization=1.0),
             dict(learning_rate=0.1, max_leaf_nodes=63, max_iter=250, l2_regularization=1.0)]
 
 
-def run_regression(df: pd.DataFrame, feats: list[str], target: str, base_col: str, clim_col: str) -> dict:
+def run_regression(df: pd.DataFrame, feats: list[str], target: str, base_col: str, clim_col: str, h: int) -> dict:
     """Fit ridge + HGB for one target; return predictions and artifacts for every model."""
     sets = {s: df[df.split == s] for s in ("train", "val", "test")}
     X = {s: d[feats].to_numpy(float) for s, d in sets.items()}
@@ -136,15 +188,16 @@ def run_regression(df: pd.DataFrame, feats: list[str], target: str, base_col: st
         mae = mean_absolute_error(y["val"], m.predict(X["val"]))
         if mae < best_mae:
             best, best_mae, best_params = m, mae, params
-    q90 = float(np.quantile(np.abs(y["val"] - best.predict(X["val"])), 0.9))   # split-conformal half-width (90%)
-    q90r = float(np.quantile(np.abs(y["val"] - ridge.predict(X["val"])), 0.9))
-    preds = {
-        "persistence": (sets["test"][base_col].to_numpy(float), None, None),
-        "climatology": (sets["test"][clim_col].to_numpy(float), None, None),
-        "ridge": (ridge.predict(X["test"]), ridge.predict(X["test"]) - q90r, ridge.predict(X["test"]) + q90r),
-        "hgb": (best.predict(X["test"]), best.predict(X["test"]) - q90, best.predict(X["test"]) + q90),
-    }
-    return dict(models={"ridge": ridge, "hgb": best}, conformal={"ridge": q90r, "hgb": q90}, preds=preds,
+    preds = {"persistence": (sets["test"][base_col].to_numpy(float), None, None),
+             "climatology": (sets["test"][clim_col].to_numpy(float), None, None)}
+    t_val, t_test = sets["val"].index.to_numpy(), sets["test"].index.to_numpy()
+    rolling = {}
+    for name, m in (("ridge", ridge), ("hgb", best)):
+        pv, pt = m.predict(X["val"]), m.predict(X["test"])
+        rolling[name] = fit_rolling_conformal(t_val, np.abs(y["val"] - pv), t_test, np.abs(y["test"] - pt), h)
+        w = halfwidth_at(rolling[name], t_test)
+        preds[name] = (pt, pt - w, pt + w)
+    return dict(models={"ridge": ridge, "hgb": best}, conformal={k: v["static"] for k, v in rolling.items()}, conformal_rolling=rolling, preds=preds,
                 y_test=y["test"], test=sets["test"], hgb_params=best_params, n_train=len(sets["train"]))
 
 
@@ -239,7 +292,7 @@ def _main(conn) -> dict:
     df["clim_temp"] = np.concatenate([attach_climatology(d, loc, clim_t, "c").to_numpy() for loc, d in df.groupby("location_id", sort=False)])
     df["clim_hi"] = np.concatenate([attach_climatology(d, loc, clim_hi, "c").to_numpy() for loc, d in df.groupby("location_id", sort=False)])
     df["temp_anom"], df["hi_anom"] = df.temp - df.clim_temp, df.hi - df.clim_hi
-    base_feats = [c for c in df.columns if c not in ("location_id", "split") and not c.startswith("y_") and not c.startswith("event_")]
+    base_feats = [c for c in df.columns if c not in ("location_id", "split") and not c.startswith(("y_", "event_", "b_"))]
     thr = pick_rain_threshold(df)
     for h in RAIN_HORIZONS:
         df[f"event_{h}"] = (df[f"y_rainamt_{h}"] >= thr).astype(float).where(df[f"y_rainamt_{h}"].notna())
@@ -255,13 +308,13 @@ def _main(conn) -> dict:
     season_of = lambda idx: pd.Series(idx.month, index=idx).map(lambda m: "Winter" if m < 3 else "Pre-monsoon" if m < 6 else "Monsoon" if m < 10 else "Post-monsoon")
 
     # ---------------- Risk A
-    for tname, base_col, clim_col, tgt_name in (("temp", "temp", "clim_temp", "temperature_c"), ("hi", "hi", "clim_hi", "heat_index_c")):
+    for tname, clim_col, tgt_name in (("temp", "clim_temp", "temperature_c"), ("hi", "clim_hi", "heat_index_c")):
         for h in TEMP_HORIZONS:
             col = f"y_{tname}_{h}"
-            r = run_regression(df, base_feats, col, base_col, clim_col)
+            r = run_regression(df, base_feats, col, f"b_{tname}_{h}", clim_col, h)
             test, y = r["test"], r["y_test"]
             artifact = config.MODELS_DIR / f"heat_{tname}_{h}h_{VERSION}.joblib"
-            joblib.dump(dict(models=r["models"], conformal=r["conformal"], features=base_feats, clim_temp=clim_t, clim_hi=clim_hi,
+            joblib.dump(dict(models=r["models"], conformal=r["conformal"], conformal_rolling=r["conformal_rolling"], features=base_feats, clim_temp=clim_t, clim_hi=clim_hi,
                              target=tgt_name, horizon_h=h, version=VERSION), artifact)
             rep = {}
             for name, (p, lo, hi) in r["preds"].items():
@@ -285,7 +338,8 @@ def _main(conn) -> dict:
                 store_predictions(conn, mk, h, test, p, lo, hi, None, y, loc_keys)
                 if name in ("ridge", "hgb"):
                     register(conn, mk, artifact, r["n_train"], base_feats, dict(r["hgb_params"]) if name == "hgb" else {"alpha": 10.0},
-                             {"test": m, "conformal_halfwidth_90": r["conformal"][name]})
+                             {"test": m, "conformal_halfwidth_90_validation": r["conformal"][name], "conformal_method": "rolling split-conformal",
+                              "conformal_window_days": r["conformal_rolling"][name]["window_days"]})
                 rep[name] = m
             report["heat"][f"{tgt_name}_{h}h"] = rep
             print("A", tgt_name, h, {k: round(v["mae"], 3) for k, v in rep.items()}, flush=True)

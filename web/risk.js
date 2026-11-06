@@ -21,7 +21,7 @@ async function risk() {
   };
   /* ---- the forecast simulator shared by heat and rain */
   const WHY = {
-    heat: "Input and output are two different moments. The input is the temperature when the forecast is made (the issue time). The output is the temperature predicted for later (issue time plus the look-ahead). Weather changes slowly, so the reading now is the strongest clue to the reading later, and it is also what the \"no change\" guess uses. The model bends that clue up or down using humidity, pressure, wind and recent rain.",
+    heat: "Input and output are two different moments. The input is the temperature when the forecast is made (the issue time). The output is the temperature predicted for later (issue time plus the look-ahead). Weather changes slowly, so the reading now is the strongest clue to the reading later, and it is also what the \"no change\" guess uses (6 hours ahead, that guess uses yesterday's reading at the same hour, so the daily cycle is not counted as skill). The model bends that clue up or down using humidity, pressure, wind and recent rain.",
     rain: "Heavy rain tends to follow wet ground and humid, low-pressure air. Recent rain and soil moisture show how saturated the area already is, humidity shows how much water the air holds, and pressure hints at storm systems. Move a slider to see which one moves the alert most.",
   };
   const dtl = (t, body) => `<details class="dtl"><summary>${ico("spark", "#0a6bd6", 15)}${t}</summary><div>${body}</div></details>`;

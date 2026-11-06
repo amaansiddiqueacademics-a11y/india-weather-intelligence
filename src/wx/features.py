@@ -37,6 +37,14 @@ def make_features(g: pd.DataFrame) -> pd.DataFrame:
     return f
 
 
+def same_hour_lag(h: int) -> int:
+    """Hours before the issue time of the latest value at the target's hour of day: the 'No change' baseline.
+
+    Repeating the value at 06:00 as the forecast for 12:00 would ignore the daily cycle and make any model
+    look skilful, so the baseline uses the same hour on the most recent day: 18 h back for +6 h, 0 for +24/+72 h."""
+    return (-h) % 24
+
+
 def climatology(df: pd.DataFrame, col: str) -> dict:
     """Mean of `col` per (location_id, month, hour). Pass TRAINING rows only."""
     g = df.groupby(["location_id", df.index.month, df.index.hour])[col].mean()

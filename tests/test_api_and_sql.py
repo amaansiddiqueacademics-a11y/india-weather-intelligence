@@ -204,3 +204,41 @@ def test_ml_breakdown_accepts_risk_names():
 def test_olap_rejects_unknown_measure():
     assert client.get("/api/olap/aggregate", params={"measures": "avg_temp_c,bogus"}).status_code == 400
     assert client.get("/api/olap/aggregate", params={"measures": "avg_temp_c,total_rain_mm"}).status_code == 200
+
+
+def _observed(loc, ts, col):
+    from wx import db
+    with db.connect() as c:
+        return c.execute(f"""SELECT f.{col} AS v FROM star.fact_weather_hourly f JOIN star.dim_location l USING (location_key)
+                             WHERE l.location_id=%s AND f.date_key=%s AND f.time_key=%s""", (loc, int(ts.strftime("%Y%m%d")), ts.hour)).fetchone()["v"]
+
+
+@pytest.mark.parametrize("h,back_h", [(6, 18), (24, 0), (72, 0)])
+def test_no_change_baseline_uses_same_hour_of_day(h, back_h):
+    """'No change' repeats the latest value at the target's hour of day: +6 h uses the reading 18 h before issue."""
+    from datetime import datetime, timedelta
+    issue = datetime(2021, 5, 10, 6)
+    j = client.post("/api/predict", json={"location_id": "BOM", "issue_time": issue.isoformat(), "risk": "heat", "horizon_h": h, "model": "persistence"}).json()
+    src = issue - timedelta(hours=back_h)
+    assert j["results"]["temperature_c"]["predicted"] == pytest.approx(_observed("BOM", src, "temperature_c"), abs=0.01)
+    assert j["results"]["heat_index_c"]["predicted"] == pytest.approx(_observed("BOM", src, "heat_index_c"), abs=0.01)
+
+
+def test_heat_intervals_cover_about_90_percent():
+    rows = [r for r in client.get("/api/ml/summary").json()["results"] if r["model"] in ("hgb", "ridge") and r["target"] in ("temperature_c", "heat_index_c")]
+    assert len(rows) == 12
+    for r in rows:
+        assert 0.885 <= r["metrics"]["interval_coverage_90"] <= 0.915, (r["target"], r["horizon_h"], r["model"])
+
+
+def test_live_interval_matches_stored_test_prediction():
+    """/api/predict and the stored test-set predictions use the same rolling 90% width for a given issue time."""
+    from wx import db
+    j = client.post("/api/predict", json={"location_id": "DEL", "issue_time": "2021-05-10T12:00:00", "risk": "heat", "horizon_h": 24, "model": "hgb"}).json()
+    live = j["results"]["temperature_c"]
+    with db.connect() as c:
+        s = c.execute("""SELECT p.predicted, p.pred_lower, p.pred_upper FROM star.fact_prediction p JOIN star.dim_model m USING (model_key)
+                         JOIN star.dim_location l USING (location_key) WHERE l.location_id='DEL' AND m.model_name='hgb' AND m.target='temperature_c'
+                         AND m.horizon_h=24 AND p.issue_date_key=20210510 AND p.issue_time_key=12""").fetchone()
+    assert live["predicted"] == pytest.approx(s["predicted"], abs=0.01)
+    assert live["upper_90"] - live["lower_90"] == pytest.approx(s["pred_upper"] - s["pred_lower"], abs=0.02)

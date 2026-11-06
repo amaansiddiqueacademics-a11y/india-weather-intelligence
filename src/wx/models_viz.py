@@ -12,7 +12,7 @@ import pandas as pd
 from sklearn.inspection import permutation_importance
 
 from . import db, ml, predict as pr
-from .features import attach_climatology
+from .features import attach_climatology, same_hour_lag
 
 TARGETS = {"temp": ("heat_temp_{h}h_v1.joblib", "y_temp_{h}", "Temperature", "°C"),
            "hi": ("heat_hi_{h}h_v1.joblib", "y_hi_{h}", "Heat index", "°C"),
@@ -126,16 +126,26 @@ def _path(model, x: np.ndarray) -> list[int]:
     return path
 
 
-def _row(conn, target: str, h: int, location_id: str, issue: datetime, overrides: dict) -> tuple[dict, np.ndarray, dict]:
+def _no_change(target: str, h: int, issue: datetime, feats: dict, window: pd.DataFrame) -> float | None:
+    """'No change' baseline: latest value at the target's hour of day (current value, incl. what-if edits, when lag is 0)."""
+    if target == "rain":
+        return None
+    lag = same_hour_lag(h)
+    if lag == 0:
+        return float(feats["temp" if target == "temp" else "hi"])
+    return float(window.loc[pd.Timestamp(issue - timedelta(hours=lag)), "temperature_c" if target == "temp" else "heat_index_c"])
+
+
+def _row(conn, target: str, h: int, location_id: str, issue: datetime, overrides: dict) -> tuple[dict, np.ndarray, dict, pd.DataFrame]:
     art = pr._artifact(TARGETS[target][0].format(h=h))
-    row, _ = pr._row_features(conn, location_id, issue, art)
+    row, window = pr._row_features(conn, location_id, issue, art)
     r = row[art["features"]].iloc[0].copy()
     for k, v in (overrides or {}).items():
         if k in r.index:
             r[k] = float(v)
     if "temp" in (overrides or {}):
         r["temp_anom"] = r["temp"] - row["clim_temp"].iloc[0]
-    return art, r.to_numpy(float), {k: float(r[k]) for k in art["features"]}
+    return art, r.to_numpy(float), {k: float(r[k]) for k in art["features"]}, window
 
 
 def explain_row(location_id: str, issue: datetime, target: str, h: int, overrides: dict, sweep: str | None = None) -> dict:
@@ -146,7 +156,7 @@ def explain_row(location_id: str, issue: datetime, target: str, h: int, override
         if rng["a"] is None:
             raise pr.PredictionError(f"no warehouse data for {location_id}")
         pr.validate_request(location_id, issue, "rain" if target == "rain" else "heat", h, "hgb", (datetime.strptime(str(rng["a"]), "%Y%m%d"), datetime.strptime(str(rng["b"]), "%Y%m%d").replace(hour=23)))
-        art, x, feats = _row(conn, target, h, location_id, issue, overrides)
+        art, x, feats, window = _row(conn, target, h, location_id, issue, overrides)
         t_target = issue + timedelta(hours=h)
         if t_target <= datetime.strptime(str(rng["b"]), "%Y%m%d").replace(hour=23):
             if target == "rain":
@@ -163,8 +173,8 @@ def explain_row(location_id: str, issue: datetime, target: str, h: int, override
     X = x.reshape(1, -1)
     hgb = art["models"]["hgb"]
     lin_name = "ridge" if target != "rain" else "logistic"
-    out = dict(observed=observed, target_time=t_target.isoformat(), conformal=art.get("conformal"), rain_threshold_mm=art.get("rain_threshold_mm"), thresholds=art.get("thresholds"), features=feats, ridge=float(_predict(art, target, "ridge" if target != "rain" else "logistic", X)[0]), hgb=float(_predict(art, target, "hgb", X)[0]), linear_name=lin_name,
-               path=_path(hgb, x), baseline_persistence=float(feats["temp" if target == "temp" else "hi"]) if target != "rain" else None)
+    out = dict(observed=observed, target_time=t_target.isoformat(), conformal=None if target == "rain" else {m: pr.conformal_halfwidth(art, m, issue) for m in art["conformal"]}, rain_threshold_mm=art.get("rain_threshold_mm"), thresholds=art.get("thresholds"), features=feats, ridge=float(_predict(art, target, "ridge" if target != "rain" else "logistic", X)[0]), hgb=float(_predict(art, target, "hgb", X)[0]), linear_name=lin_name,
+               path=_path(hgb, x), baseline_persistence=_no_change(target, h, issue, feats, window))
     # staged predictions: how the boosted ensemble converges as trees are added
     if target == "rain":
         staged = [float(p[0, 1]) for p in hgb.staged_predict_proba(X)]
